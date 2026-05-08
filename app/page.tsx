@@ -4,12 +4,11 @@ import { useCallback, useState, useEffect, Suspense } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
+import { AddWalletDialog } from "@/components/add-wallet-dialog"
 import { Navigation } from "@/components/navigation"
 import { StatsCard } from "@/components/stats-card"
 import { TokenSelector } from "@/components/token-selector"
 import { WalletBreakdown } from "@/components/wallet-breakdown"
-import { SupplyDistributionChart } from "@/components/supply-distribution-chart"
-import { TokenWatchCard } from "@/components/token-watch-card"
 import { SaveSnapshotDialog } from "@/components/save-snapshot-dialog"
 import { Button } from "@/components/ui/button"
 import { Coins, Percent, Wallet, DatabaseZap, CircleDollarSign } from "lucide-react"
@@ -18,6 +17,7 @@ import { jsonFetcher, readApiResponse } from "@/lib/http"
 import type {
   HoldingsResponseData,
   TrackedToken,
+  TrackedWallet,
 } from "@/lib/types"
 
 function formatPercentValue(value: number | null | undefined, digits = 4) {
@@ -73,6 +73,10 @@ function DashboardContent() {
     "/api/tokens",
     jsonFetcher
   )
+  const { data: trackedWallets = [], mutate: mutateWallets } = useSWR<TrackedWallet[]>(
+    "/api/wallets",
+    jsonFetcher
+  )
 
   // Fetch holdings (optionally filtered by token)
   const holdingsUrl = selectedToken
@@ -88,10 +92,25 @@ function DashboardContent() {
     }
   )
 
+  const walletCount = data?.walletCount || 0
+  const trackedTokens = tokensData?.tokens || []
+  const trackedTokenCount = data?.trackedTokenCount ?? trackedTokens.length
+  const walletSummaries = data?.walletSummaries || []
+  const totalSol = data?.totalSolBalance || 0
+  const totalUsdc = data?.totalUsdcBalance || 0
+  const totalSelectedTokenBalance = data?.totalSelectedTokenBalance || 0
+  const totalSelectedTokenSupplyPercent = data?.totalSelectedTokenSupplyPercent
+
+  // Get selected token info for display
+  const selectedTokenInfo = selectedToken
+    ? trackedTokens.find((t) => t.mint === selectedToken)
+    : null
+
   const handleRefresh = useCallback(() => {
     mutate()
     mutateTokens()
-  }, [mutate, mutateTokens])
+    mutateWallets()
+  }, [mutate, mutateTokens, mutateWallets])
 
   const handleAddToken = useCallback(
     async (mint: string) => {
@@ -126,10 +145,12 @@ function DashboardContent() {
     async (
       walletId: string,
       patch: {
+        label?: string | null
         trade_status?: string | null
-        funding_cex?: string | null
+        funding_source_label?: string | null
         platform?: string | null
-        planned_date?: string | null
+        funded_at?: string | null
+        sort_order?: number | null
       }
     ) => {
       const response = await fetch(`/api/wallets/${walletId}`, {
@@ -139,28 +160,97 @@ function DashboardContent() {
       })
 
       await readApiResponse(response)
-      await mutate()
+      await Promise.all([mutate(), mutateWallets()])
     },
-    [mutate]
+    [mutate, mutateWallets]
   )
 
-  const walletCount = data?.walletCount || 0
-  const trackedTokens = tokensData?.tokens || []
-  const trackedTokenCount = data?.trackedTokenCount ?? trackedTokens.length
-  const walletSummaries = data?.walletSummaries || []
-  const totalSol = data?.totalSolBalance || 0
-  const totalUsdc = data?.totalUsdcBalance || 0
-  const totalSelectedTokenBalance = data?.totalSelectedTokenBalance || 0
-  const totalSelectedTokenSupplyPercent = data?.totalSelectedTokenSupplyPercent
+  const handleAddWallet = useCallback(
+    async (wallet: {
+      address: string
+      label: string
+      type: "mine" | "external"
+    }) => {
+      const response = await fetch("/api/wallets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(wallet),
+      })
 
-  // Get selected token info for display
-  const selectedTokenInfo = selectedToken
-    ? trackedTokens.find((t) => t.mint === selectedToken)
-    : null
+      await readApiResponse(response)
+      await Promise.all([mutate(), mutateWallets()])
+    },
+    [mutate, mutateWallets]
+  )
 
-  const selectedAggregatedHolding = selectedToken
-    ? data?.aggregated?.find((token) => token.mint === selectedToken)
-    : undefined
+  const handleAddWalletsBulk = useCallback(
+    async (
+      walletsToAdd: {
+        address: string
+        label: string
+        type: "mine" | "external"
+        lineNumber: number
+      }[]
+    ) => {
+      const response = await fetch("/api/wallets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallets: walletsToAdd }),
+      })
+
+      const data = await readApiResponse<{
+        insertedCount: number
+        failures?: { address: string; lineNumber: number | null; error: string }[]
+      }>(response)
+
+      await Promise.all([mutate(), mutateWallets()])
+      return data
+    },
+    [mutate, mutateWallets]
+  )
+
+  const handleMoveWallet = useCallback(
+    async (walletId: string, direction: "up" | "down") => {
+      const currentIndex = walletSummaries.findIndex(
+        (wallet) => wallet.walletId === walletId
+      )
+
+      if (currentIndex === -1) {
+        return
+      }
+
+      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1
+      if (targetIndex < 0 || targetIndex >= walletSummaries.length) {
+        return
+      }
+
+      const currentWallet = walletSummaries[currentIndex]
+      const targetWallet = walletSummaries[targetIndex]
+
+      if (!currentWallet?.walletId || !targetWallet?.walletId) {
+        return
+      }
+
+      const currentSortOrder = currentWallet.sortOrder ?? currentIndex
+      const targetSortOrder = targetWallet.sortOrder ?? targetIndex
+
+      await Promise.all([
+        fetch(`/api/wallets/${currentWallet.walletId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sort_order: targetSortOrder }),
+        }).then(readApiResponse),
+        fetch(`/api/wallets/${targetWallet.walletId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sort_order: currentSortOrder }),
+        }).then(readApiResponse),
+      ])
+
+      await mutate()
+    },
+    [mutate, walletSummaries]
+  )
 
   return (
     <div className="min-h-screen bg-background">
@@ -169,14 +259,19 @@ function DashboardContent() {
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Wallet Manager</h1>
             <p className="mt-1 text-muted-foreground">
               {selectedTokenInfo
-                ? `Viewing holdings for ${selectedTokenInfo.symbol}`
-                : "Track your Solana token holdings across all wallets"}
+                ? `Operational view for ${selectedTokenInfo.symbol}`
+                : "Track wallet ownership, operational fields, and launch snapshots"}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <AddWalletDialog
+              existingAddresses={trackedWallets.map((wallet) => wallet.address)}
+              onAdd={handleAddWallet}
+              onAddBulk={handleAddWalletsBulk}
+            />
             <Button asChild variant="outline" size="sm">
               <Link href="/snapshots">Snapshots</Link>
             </Button>
@@ -196,11 +291,17 @@ function DashboardContent() {
           </div>
         )}
 
-        {/* Token Selector */}
-        <div className="mb-8 rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Token Filter
-          </h2>
+        <div className="mb-6 rounded-lg border border-border bg-card p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Selected Token
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                SOL and USDC are always loaded. Pick one tracked token to analyze amount and % of supply.
+              </p>
+            </div>
+          </div>
           <TokenSelector
             tokens={trackedTokens}
             selectedToken={selectedToken}
@@ -210,7 +311,7 @@ function DashboardContent() {
           />
         </div>
 
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <StatsCard
             title="Total SOL"
             value={formatNumber(totalSol, {
@@ -264,16 +365,6 @@ function DashboardContent() {
           />
         </div>
 
-        {selectedTokenInfo && selectedAggregatedHolding && (
-          <div className="mb-8 grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <SupplyDistributionChart token={selectedAggregatedHolding} />
-            <TokenWatchCard
-              mint={selectedTokenInfo.mint}
-              symbol={selectedTokenInfo.symbol}
-            />
-          </div>
-        )}
-
         <div className="mb-8 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">
@@ -282,7 +373,7 @@ function DashboardContent() {
                 : "Wallet Breakdown"}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Amounts first: SOL, USDC, selected token balance, and supply ownership
+              Spreadsheet-style operations view focused on balances, funding, and supply ownership
             </p>
           </div>
           <WalletBreakdown
@@ -291,6 +382,7 @@ function DashboardContent() {
             selectedTokenSymbol={selectedTokenInfo?.symbol}
             isLoading={isLoading}
             onUpdateWallet={handleUpdateWallet}
+            onMoveWallet={handleMoveWallet}
           />
         </div>
       </main>

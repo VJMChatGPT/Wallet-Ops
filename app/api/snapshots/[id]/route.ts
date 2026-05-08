@@ -17,7 +17,7 @@ export async function GET(
           .from("portfolio_snapshot_wallets")
           .select("*")
           .eq("snapshot_id", id)
-          .order("selected_token_balance", { ascending: false }),
+          .order("row_order", { ascending: true, nullsFirst: false }),
       ])
 
     if (snapshotError) {

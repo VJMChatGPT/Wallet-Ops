@@ -9,9 +9,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { SolscanLink } from "@/components/solscan-link"
 import { formatNumber } from "@/lib/api"
 import type { PortfolioSnapshotWallet } from "@/lib/types"
-import { getWalletFieldBadgeClass } from "@/lib/wallet-fields"
+import {
+  formatFundedAtDisplay,
+  getWalletFieldBadgeClass,
+} from "@/lib/wallet-fields"
 import { cn } from "@/lib/utils"
 
 interface SnapshotWalletTableProps {
@@ -52,7 +56,6 @@ export function SnapshotWalletTable({
             <TableHead>Foundeada</TableHead>
             <TableHead>Plataforma</TableHead>
             <TableHead>Dia</TableHead>
-            <TableHead>Type</TableHead>
             <TableHead className="text-right">SOL</TableHead>
             <TableHead className="text-right">USDC</TableHead>
             <TableHead className="text-right">
@@ -76,32 +79,38 @@ export function SnapshotWalletTable({
               </TableCell>
               <TableCell>
                 <code className="text-xs text-muted-foreground">
-                  {shortAddress(wallet.wallet_address)}
+                  <SolscanLink
+                    address={wallet.wallet_address}
+                    label={shortAddress(wallet.wallet_address)}
+                  />
                 </code>
               </TableCell>
               <TableCell>
                 <SnapshotFieldBadge value={wallet.trade_status} />
               </TableCell>
               <TableCell>
-                <SnapshotFieldBadge value={wallet.funding_cex} />
+                <div className="space-y-1">
+                  <SnapshotFieldBadge value={wallet.funding_source_label} />
+                  {wallet.first_funder_address && (
+                    <code className="block text-[10px] text-muted-foreground">
+                      <SolscanLink
+                        address={wallet.first_funder_address}
+                        label={shortAddress(wallet.first_funder_address)}
+                      />
+                    </code>
+                  )}
+                  {wallet.funding_label_source && (
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
+                      {wallet.funding_label_source}
+                    </p>
+                  )}
+                </div>
               </TableCell>
               <TableCell>
                 <SnapshotFieldBadge value={wallet.platform} />
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
-                {wallet.planned_date || "---"}
-              </TableCell>
-              <TableCell>
-                {wallet.wallet_type ? (
-                  <Badge
-                    variant={wallet.wallet_type === "mine" ? "default" : "secondary"}
-                    className="text-xs"
-                  >
-                    {wallet.wallet_type === "mine" ? "Mine" : "External"}
-                  </Badge>
-                ) : (
-                  "-"
-                )}
+                {formatFundedAtDisplay(wallet.funded_at)}
               </TableCell>
               <TableCell className="text-right font-mono">
                 {formatNumber(Number(wallet.sol_balance || 0), {

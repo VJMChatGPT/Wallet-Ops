@@ -4,6 +4,7 @@ import { use, useCallback } from "react"
 import useSWR from "swr"
 import Link from "next/link"
 import { Navigation } from "@/components/navigation"
+import { SolscanLink } from "@/components/solscan-link"
 import { StatsCard } from "@/components/stats-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -122,7 +123,11 @@ export default function TokenPage({
                 </div>
                 <div className="mt-3 flex items-center gap-2">
                   <code className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
-                    {mint.slice(0, 8)}...{mint.slice(-8)}
+                    <SolscanLink
+                      address={mint}
+                      kind="token"
+                      label={`${mint.slice(0, 8)}...${mint.slice(-8)}`}
+                    />
                   </code>
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={copyMint}>
                     <Copy className="h-3.5 w-3.5" />
@@ -243,7 +248,10 @@ export default function TokenPage({
                             <div>
                               <p className="font-medium">{h.walletLabel || "Unnamed"}</p>
                               <code className="text-xs text-muted-foreground">
-                                {h.walletAddress.slice(0, 8)}...{h.walletAddress.slice(-8)}
+                                <SolscanLink
+                                  address={h.walletAddress}
+                                  label={`${h.walletAddress.slice(0, 8)}...${h.walletAddress.slice(-8)}`}
+                                />
                               </code>
                             </div>
                           </TableCell>

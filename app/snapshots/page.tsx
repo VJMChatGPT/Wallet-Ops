@@ -87,7 +87,7 @@ export default function SnapshotsPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Snapshots</h1>
             <p className="mt-1 text-muted-foreground">
-              Freeze your portfolio before and after launches, then compare the result.
+              Freeze wallet ownership before and after launches, then compare the result.
             </p>
           </div>
           <SaveSnapshotDialog onSaved={() => mutate()} />
@@ -162,12 +162,13 @@ export default function SnapshotsPage() {
                 <TableRow className="border-border hover:bg-transparent">
                   <TableHead>Name</TableHead>
                   <TableHead>Captured</TableHead>
-                    <TableHead>Selected Token</TableHead>
-                    <TableHead className="text-right">Token Amount</TableHead>
-                    <TableHead className="text-right">% Supply</TableHead>
-                    <TableHead className="text-right">Wallets</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
+                  <TableHead className="text-right">Total SOL</TableHead>
+                  <TableHead>Selected Token</TableHead>
+                  <TableHead className="text-right">Token Amount</TableHead>
+                  <TableHead className="text-right">% Supply</TableHead>
+                  <TableHead className="text-right">Wallets</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
               </TableHeader>
               <TableBody>
                 {snapshots.map((snapshot, index) => {
@@ -187,6 +188,12 @@ export default function SnapshotsPage() {
                         </div>
                       </TableCell>
                       <TableCell>{formatSnapshotTimestamp(snapshot.created_at)}</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatNumber(Number(snapshot.total_sol_balance || 0), {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 6,
+                        })}
+                      </TableCell>
                       <TableCell>
                         {snapshot.selected_token_symbol ? (
                           <Badge variant="outline" className="font-mono">

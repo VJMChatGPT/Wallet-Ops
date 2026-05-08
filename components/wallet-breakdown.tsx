@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect, useState } from "react"
+
 import {
   Table,
   TableBody,
@@ -17,11 +19,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { SolscanLink } from "@/components/solscan-link"
 import { cn } from "@/lib/utils"
 import { formatNumber } from "@/lib/api"
 import type { WalletHoldingSummary } from "@/lib/types"
+import { ChevronDown, ChevronUp } from "lucide-react"
 import {
-  FUNDING_CEX_OPTIONS,
+  formatFundedAtInputValue,
+  FUNDING_SOURCE_OPTIONS,
   getWalletFieldBadgeClass,
   PLATFORM_OPTIONS,
   TRADE_STATUS_OPTIONS,
@@ -35,12 +41,15 @@ interface WalletBreakdownProps {
   onUpdateWallet?: (
     walletId: string,
     patch: {
+      label?: string | null
       trade_status?: string | null
-      funding_cex?: string | null
+      funding_source_label?: string | null
       platform?: string | null
-      planned_date?: string | null
+      funded_at?: string | null
+      sort_order?: number | null
     }
   ) => Promise<void>
+  onMoveWallet?: (walletId: string, direction: "up" | "down") => Promise<void>
 }
 
 function shortAddress(address: string) {
@@ -73,6 +82,7 @@ export function WalletBreakdown({
   selectedTokenSymbol,
   isLoading,
   onUpdateWallet,
+  onMoveWallet,
 }: WalletBreakdownProps) {
   const totalSol = wallets.reduce((sum, wallet) => sum + (wallet.solBalance || 0), 0)
   const totalUsdc = wallets.reduce((sum, wallet) => sum + wallet.usdcBalance, 0)
@@ -107,13 +117,13 @@ export function WalletBreakdown({
       <Table>
         <TableHeader>
           <TableRow className="border-border hover:bg-transparent">
+            <TableHead className="w-[72px]">Orden</TableHead>
             <TableHead>Label</TableHead>
             <TableHead>Address</TableHead>
             <TableHead>Tradeada</TableHead>
             <TableHead>Foundeada</TableHead>
             <TableHead>Plataforma</TableHead>
             <TableHead>Dia</TableHead>
-            <TableHead>Type</TableHead>
             <TableHead className="text-right">SOL</TableHead>
             <TableHead className="text-right">USDC</TableHead>
             <TableHead className="text-right">
@@ -130,14 +140,55 @@ export function WalletBreakdown({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {wallets.map((wallet) => (
+          {wallets.map((wallet, index) => (
             <TableRow key={wallet.walletAddress} className="border-border">
+              <TableCell>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() =>
+                      wallet.walletId && onMoveWallet
+                        ? void onMoveWallet(wallet.walletId, "up")
+                        : undefined
+                    }
+                    disabled={index === 0 || !wallet.walletId || !onMoveWallet}
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() =>
+                      wallet.walletId && onMoveWallet
+                        ? void onMoveWallet(wallet.walletId, "down")
+                        : undefined
+                    }
+                    disabled={
+                      index === wallets.length - 1 || !wallet.walletId || !onMoveWallet
+                    }
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </TableCell>
               <TableCell className="font-medium">
-                {wallet.walletLabel || "Unnamed Wallet"}
+                <WalletLabelInput
+                  walletId={wallet.walletId}
+                  value={wallet.walletLabel}
+                  onSave={onUpdateWallet}
+                />
               </TableCell>
               <TableCell>
                 <code className="text-xs text-muted-foreground">
-                  {shortAddress(wallet.walletAddress)}
+                  <SolscanLink
+                    address={wallet.walletAddress}
+                    label={shortAddress(wallet.walletAddress)}
+                  />
                 </code>
               </TableCell>
               <TableCell>
@@ -154,15 +205,32 @@ export function WalletBreakdown({
               </TableCell>
               <TableCell>
                 <WalletFieldSelect
-                  value={wallet.fundingCex}
-                  options={FUNDING_CEX_OPTIONS}
+                  value={wallet.fundingSourceLabel}
+                  options={FUNDING_SOURCE_OPTIONS}
                   placeholder="---"
                   onChange={(value) =>
                     wallet.walletId && onUpdateWallet
-                      ? onUpdateWallet(wallet.walletId, { funding_cex: value })
+                      ? onUpdateWallet(wallet.walletId, {
+                          funding_source_label: value,
+                        })
                       : Promise.resolve()
                   }
                 />
+                {wallet.firstFunderAddress && (
+                  <div className="mt-1 space-y-1">
+                    <p className="max-w-[120px] truncate font-mono text-[10px] text-muted-foreground">
+                      <SolscanLink
+                        address={wallet.firstFunderAddress}
+                        label={shortAddress(wallet.firstFunderAddress)}
+                      />
+                    </p>
+                    {wallet.fundingLabelSource && (
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
+                        {wallet.fundingLabelSource}
+                      </p>
+                    )}
+                  </div>
+                )}
               </TableCell>
               <TableCell>
                 <WalletFieldSelect
@@ -178,25 +246,17 @@ export function WalletBreakdown({
               </TableCell>
               <TableCell>
                 <Input
-                  type="date"
-                  value={wallet.plannedDate || ""}
+                  type="datetime-local"
+                  value={formatFundedAtInputValue(wallet.fundedAt)}
                   onChange={(event) => {
                     if (wallet.walletId && onUpdateWallet) {
                       void onUpdateWallet(wallet.walletId, {
-                        planned_date: event.target.value || null,
+                        funded_at: event.target.value || null,
                       })
                     }
                   }}
-                  className="h-8 min-w-[132px] border-border bg-transparent text-xs"
+                  className="h-8 min-w-[168px] border-border bg-transparent text-xs"
                 />
-              </TableCell>
-              <TableCell>
-                <Badge
-                  variant={wallet.walletType === "mine" ? "default" : "secondary"}
-                  className="text-xs"
-                >
-                  {wallet.walletType === "mine" ? "Mine" : "External"}
-                </Badge>
               </TableCell>
               <TableCell className="text-right font-mono">
                 {formatSol(wallet.solBalance)}
@@ -213,8 +273,8 @@ export function WalletBreakdown({
             </TableRow>
           ))}
           <TableRow className="border-border bg-muted/30">
-            <TableCell className="font-semibold">Total</TableCell>
             <TableCell />
+            <TableCell className="font-semibold">Total</TableCell>
             <TableCell />
             <TableCell />
             <TableCell />
@@ -241,6 +301,68 @@ export function WalletBreakdown({
         </TableBody>
       </Table>
     </div>
+  )
+}
+
+function WalletLabelInput({
+  walletId,
+  value,
+  onSave,
+}: {
+  walletId: string | null
+  value: string | null
+  onSave?: (
+    walletId: string,
+    patch: {
+      label?: string | null
+      trade_status?: string | null
+      funding_source_label?: string | null
+      platform?: string | null
+      funded_at?: string | null
+      sort_order?: number | null
+    }
+  ) => Promise<void>
+}) {
+  const [draft, setDraft] = useState(value || "")
+
+  useEffect(() => {
+    setDraft(value || "")
+  }, [value])
+
+  const commit = async () => {
+    if (!walletId || !onSave) {
+      return
+    }
+
+    const normalizedCurrent = (value || "").trim()
+    const normalizedDraft = draft.trim()
+
+    if (normalizedCurrent === normalizedDraft) {
+      return
+    }
+
+    await onSave(walletId, {
+      label: normalizedDraft || null,
+    })
+  }
+
+  return (
+    <Input
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        void commit()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault()
+          void commit()
+          event.currentTarget.blur()
+        }
+      }}
+      placeholder="Unnamed Wallet"
+      className="h-8 min-w-[160px] border-border bg-transparent text-sm font-medium"
+    />
   )
 }
 

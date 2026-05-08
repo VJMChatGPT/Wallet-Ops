@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
+import { SolscanLink } from "@/components/solscan-link"
 import type { TokenWatchAlert } from "@/lib/types"
 import { Bell, Radar } from "lucide-react"
 
@@ -146,7 +147,11 @@ export function TokenWatchCard({ mint, symbol }: TokenWatchCardProps) {
                 <Bell className="mt-0.5 h-4 w-4 text-primary" />
                 <div className="space-y-1">
                   <p className="font-medium">
-                    {shortAddress(latestAlert.buyerAddress)} bought {symbol}
+                    <SolscanLink
+                      address={latestAlert.buyerAddress}
+                      label={shortAddress(latestAlert.buyerAddress)}
+                    />{" "}
+                    bought {symbol}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {latestAlert.source || "Unknown source"} at{" "}
@@ -180,7 +185,12 @@ export function TokenWatchCard({ mint, symbol }: TokenWatchCardProps) {
                   className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2"
                 >
                   <div className="min-w-0">
-                    <p className="font-mono text-sm">{shortAddress(alert.buyerAddress)}</p>
+                    <p className="font-mono text-sm">
+                      <SolscanLink
+                        address={alert.buyerAddress}
+                        label={shortAddress(alert.buyerAddress)}
+                      />
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {alert.source || "Unknown source"} • {formatTimestamp(alert.timestamp)}
                     </p>

@@ -4,10 +4,16 @@ export interface TrackedWallet {
   address: string
   label: string | null
   type: "mine" | "external"
+  sort_order: number | null
   trade_status: string | null
-  funding_cex: string | null
+  funding_source_label: string | null
+  funding_source_address: string | null
+  funding_label_source: string | null
+  first_funder_address: string | null
   platform: string | null
-  planned_date: string | null
+  funded_at: string | null
+  funding_detection_method: string | null
+  funding_detected_at: string | null
   created_at: string
 }
 
@@ -171,10 +177,16 @@ export interface WalletHoldingSummary {
   walletAddress: string
   walletLabel: string | null
   walletType: "mine" | "external"
+  sortOrder: number | null
   tradeStatus: string | null
-  fundingCex: string | null
+  fundingSourceLabel: string | null
+  fundingSourceAddress: string | null
+  fundingLabelSource: string | null
+  firstFunderAddress: string | null
   platform: string | null
-  plannedDate: string | null
+  fundedAt: string | null
+  fundingDetectionMethod: string | null
+  fundingDetectedAt: string | null
   solBalance: number | null
   solLamports: number | null
   solUsdValue: number
@@ -244,10 +256,14 @@ export interface PortfolioSnapshotWallet {
   wallet_label: string | null
   wallet_address: string
   wallet_type: "mine" | "external" | null
+  row_order: number | null
   trade_status: string | null
-  funding_cex: string | null
+  funding_source_label: string | null
+  funding_source_address: string | null
+  funding_label_source: string | null
+  first_funder_address: string | null
   platform: string | null
-  planned_date: string | null
+  funded_at: string | null
   sol_balance: number | string | null
   usdc_balance: number | string | null
   sol_usd_value: number | string | null

@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { SolscanLink } from "@/components/solscan-link"
 import { Copy, ExternalLink, Trash2 } from "lucide-react"
 import type { TrackedWallet } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -75,7 +76,7 @@ export function WalletCard({
         <div className="space-y-3">
           <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-2">
             <code className="flex-1 truncate text-xs text-muted-foreground">
-              {wallet.address}
+              <SolscanLink address={wallet.address} label={wallet.address} />
             </code>
             <Button
               variant="ghost"

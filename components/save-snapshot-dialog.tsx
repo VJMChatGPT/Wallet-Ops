@@ -78,9 +78,9 @@ export function SaveSnapshotDialog({
       <DialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Save Portfolio Snapshot</DialogTitle>
+            <DialogTitle>Save Launch Snapshot</DialogTitle>
             <DialogDescription>
-              Freeze the current wallet state
+              Freeze the current wallet operations state
               {selectedTokenSymbol ? ` for ${selectedTokenSymbol}` : ""} so you
               can compare token amounts and supply ownership later.
             </DialogDescription>

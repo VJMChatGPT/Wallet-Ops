@@ -2,9 +2,9 @@ import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { validateSolanaWalletAddress } from "@/lib/solana"
 import {
-  normalizeFundingCex,
+  normalizeFundedAt,
+  normalizeFundingSourceLabel,
   normalizePlatform,
-  normalizePlannedDate,
   normalizeTradeStatus,
 } from "@/lib/wallet-fields"
 
@@ -14,20 +14,41 @@ function normalizeLabel(value: unknown) {
   return trimmed ? trimmed : null
 }
 
+function normalizeSortOrder(value: unknown) {
+  if (value === undefined) return undefined
+  if (value === null || value === "") return null
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error("sort_order must be a non-negative integer")
+  }
+
+  return value
+}
+
 function buildWalletMetadata(input: {
   trade_status?: unknown
+  funding_source_label?: unknown
   funding_cex?: unknown
   platform?: unknown
+  funded_at?: unknown
   planned_date?: unknown
 }) {
   return {
     trade_status:
       input.trade_status !== undefined ? normalizeTradeStatus(input.trade_status) : undefined,
-    funding_cex:
-      input.funding_cex !== undefined ? normalizeFundingCex(input.funding_cex) : undefined,
+    funding_source_label:
+      input.funding_source_label !== undefined
+        ? normalizeFundingSourceLabel(input.funding_source_label)
+        : input.funding_cex !== undefined
+          ? normalizeFundingSourceLabel(input.funding_cex)
+          : undefined,
     platform: input.platform !== undefined ? normalizePlatform(input.platform) : undefined,
-    planned_date:
-      input.planned_date !== undefined ? normalizePlannedDate(input.planned_date) : undefined,
+    funded_at:
+      input.funded_at !== undefined
+        ? normalizeFundedAt(input.funded_at)
+        : input.planned_date !== undefined
+          ? normalizeFundedAt(input.planned_date)
+          : undefined,
   }
 }
 
@@ -77,15 +98,18 @@ export async function PATCH(
     const updatePayload = {
       ...(normalizedAddress ? { address: normalizedAddress } : {}),
       ...(body.label !== undefined ? { label: normalizeLabel(body.label) } : {}),
+      ...(body.sort_order !== undefined
+        ? { sort_order: normalizeSortOrder(body.sort_order) }
+        : {}),
       ...(metadata.trade_status !== undefined
         ? { trade_status: metadata.trade_status }
         : {}),
-      ...(metadata.funding_cex !== undefined
-        ? { funding_cex: metadata.funding_cex }
+      ...(metadata.funding_source_label !== undefined
+        ? { funding_source_label: metadata.funding_source_label }
         : {}),
       ...(metadata.platform !== undefined ? { platform: metadata.platform } : {}),
-      ...(metadata.planned_date !== undefined
-        ? { planned_date: metadata.planned_date }
+      ...(metadata.funded_at !== undefined
+        ? { funded_at: metadata.funded_at }
         : {}),
     }
 

@@ -18,15 +18,19 @@ function toNumber(value: number | string | null | undefined) {
 }
 
 export function buildSnapshotWalletRows(walletSummaries: WalletHoldingSummary[]) {
-  return walletSummaries.map((wallet) => ({
+  return walletSummaries.map((wallet, index) => ({
+    row_order: wallet.sortOrder ?? index,
     wallet_id: wallet.walletId,
     wallet_label: wallet.walletLabel,
     wallet_address: wallet.walletAddress,
     wallet_type: wallet.walletType,
     trade_status: wallet.tradeStatus,
-    funding_cex: wallet.fundingCex,
+    funding_source_label: wallet.fundingSourceLabel,
+    funding_source_address: wallet.fundingSourceAddress,
+    funding_label_source: wallet.fundingLabelSource,
+    first_funder_address: wallet.firstFunderAddress,
     platform: wallet.platform,
-    planned_date: wallet.plannedDate,
+    funded_at: wallet.fundedAt,
     sol_balance: wallet.solBalance ?? 0,
     usdc_balance: wallet.usdcBalance,
     sol_usd_value: wallet.solUsdValue,
@@ -75,9 +79,16 @@ export function normalizeSnapshotWallet(
   return {
     ...wallet,
     trade_status: wallet.trade_status ?? null,
-    funding_cex: wallet.funding_cex ?? null,
+    row_order:
+      wallet.row_order === null || wallet.row_order === undefined
+        ? null
+        : toNumber(wallet.row_order),
+    funding_source_label: wallet.funding_source_label ?? null,
+    funding_source_address: wallet.funding_source_address ?? null,
+    funding_label_source: wallet.funding_label_source ?? null,
+    first_funder_address: wallet.first_funder_address ?? null,
     platform: wallet.platform ?? null,
-    planned_date: wallet.planned_date ?? null,
+    funded_at: wallet.funded_at ?? null,
     sol_balance: toNumber(wallet.sol_balance),
     usdc_balance: toNumber(wallet.usdc_balance),
     sol_usd_value: toNumber(wallet.sol_usd_value),

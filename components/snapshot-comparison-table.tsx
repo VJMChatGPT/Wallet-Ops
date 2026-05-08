@@ -9,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { SolscanLink } from "@/components/solscan-link"
 import { formatNumber } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { SnapshotWalletComparisonRow } from "@/lib/types"
@@ -78,7 +79,10 @@ export function SnapshotComparisonTable({
                       )}
                     </div>
                     <code className="text-xs text-muted-foreground">
-                      {shortAddress(wallet.walletAddress)}
+                      <SolscanLink
+                        address={wallet.walletAddress}
+                        label={shortAddress(wallet.walletAddress)}
+                      />
                     </code>
                   </div>
                 </TableCell>

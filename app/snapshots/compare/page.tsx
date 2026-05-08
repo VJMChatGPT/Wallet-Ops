@@ -43,7 +43,7 @@ function SnapshotCompareContent() {
             <p className="mt-1 text-muted-foreground">
               {data
                 ? `From ${formatSnapshotTimestamp(data.from.created_at)} to ${formatSnapshotTimestamp(data.to.created_at)}`
-                : "Compare two frozen portfolio captures"}
+                : "Compare two frozen wallet operation captures"}
             </p>
           </div>
           <Button asChild variant="outline" size="sm">

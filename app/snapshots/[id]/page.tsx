@@ -39,7 +39,7 @@ export default function SnapshotDetailPage() {
             <p className="mt-1 text-muted-foreground">
               {data?.snapshot
                 ? `Captured ${formatSnapshotTimestamp(data.snapshot.created_at)}`
-                : "Frozen portfolio state"}
+                : "Frozen wallet operations state"}
             </p>
           </div>
           <Button asChild variant="outline" size="sm">

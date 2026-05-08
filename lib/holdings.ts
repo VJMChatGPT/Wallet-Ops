@@ -11,12 +11,15 @@ import {
   SOLANA_USDC_MINT,
   WRAPPED_SOL_MINT,
 } from "@/lib/default-tokens"
+import { enrichWalletFundingMetadata } from "@/lib/funding-detection"
+import { sortWalletsByOrder } from "@/lib/wallet-order"
 import { getPumpFunBondingCurveBalance } from "@/lib/pumpfun"
 import type {
   AggregatedTokenHolding,
   HoldingsResponseData,
   TokenHolding,
   TrackedToken,
+  TrackedWallet,
   WalletHoldingSummary,
 } from "@/lib/types"
 
@@ -52,10 +55,17 @@ export async function getLiveHoldingsData(
         address: string
         label: string | null
         type: "mine" | "external"
+        sort_order: number | null
         trade_status: string | null
-        funding_cex: string | null
+        funding_source_label: string | null
+        funding_source_address: string | null
+        funding_label_source: string | null
+        first_funder_address: string | null
         platform: string | null
-        planned_date: string | null
+        funded_at: string | null
+        funding_detection_method: string | null
+        funding_detected_at: string | null
+        created_at: string
       }[] | null
       error: { message: string } | null
     }>,
@@ -73,6 +83,12 @@ export async function getLiveHoldingsData(
     throw new Error(tokensError.message)
   }
 
+  const fundingAwareWallets = await enrichWalletFundingMetadata(
+    supabase as Parameters<typeof enrichWalletFundingMetadata>[0],
+    (wallets || []) as TrackedWallet[]
+  )
+  const orderedWallets = sortWalletsByOrder(fundingAwareWallets)
+
   const effectiveTrackedTokens = mergeTrackedTokensWithDefaults(
     (trackedTokens || []) as TrackedToken[]
   )
@@ -88,7 +104,7 @@ export async function getLiveHoldingsData(
       ? effectiveTrackedTokens.find((token) => token.mint === tokenMint) || null
       : null
 
-  if (!wallets || wallets.length === 0) {
+  if (orderedWallets.length === 0) {
     return {
       holdings: [],
       aggregated: [],
@@ -111,7 +127,7 @@ export async function getLiveHoldingsData(
   const allHoldings: TokenHolding[] = []
 
   const walletBalances = await Promise.all(
-    wallets.map(async (wallet) => {
+    orderedWallets.map(async (wallet) => {
       const [assets, solBalance] = await Promise.all([
         getWalletTokenBalances(wallet.address),
         getWalletSolBalance(wallet.address),
@@ -311,10 +327,16 @@ export async function getLiveHoldingsData(
         walletAddress: wallet.address,
         walletLabel: wallet.label,
         walletType: wallet.type,
+        sortOrder: wallet.sort_order,
         tradeStatus: wallet.trade_status,
-        fundingCex: wallet.funding_cex,
+        fundingSourceLabel: wallet.funding_source_label,
+        fundingSourceAddress: wallet.funding_source_address,
+        fundingLabelSource: wallet.funding_label_source,
+        firstFunderAddress: wallet.first_funder_address,
         platform: wallet.platform,
-        plannedDate: wallet.planned_date,
+        fundedAt: wallet.funded_at,
+        fundingDetectionMethod: wallet.funding_detection_method,
+        fundingDetectedAt: wallet.funding_detected_at,
         solBalance: solBalance?.sol ?? null,
         solLamports: solBalance?.lamports ?? null,
         solUsdValue,
@@ -358,7 +380,7 @@ export async function getLiveHoldingsData(
     aggregated,
     walletSummaries,
     totalValueUsd: portfolioTotalValueUsd,
-    walletCount: wallets.length,
+    walletCount: orderedWallets.length,
     trackedTokenCount: effectiveTrackedTokens.length,
     totalSolBalance,
     totalUsdcBalance,

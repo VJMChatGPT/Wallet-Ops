@@ -1,5 +1,5 @@
 export const TRADE_STATUS_OPTIONS = ["SI", "NO", "+0-", "Dev"] as const
-export const FUNDING_CEX_OPTIONS = [
+export const FUNDING_SOURCE_OPTIONS = [
   "COINEX",
   "MEXC",
   "BINGX",
@@ -24,10 +24,10 @@ export const PLATFORM_OPTIONS = [
 ] as const
 
 export type TradeStatusOption = (typeof TRADE_STATUS_OPTIONS)[number]
-export type FundingCexOption = (typeof FUNDING_CEX_OPTIONS)[number]
+export type FundingSourceOption = (typeof FUNDING_SOURCE_OPTIONS)[number]
 export type PlatformOption = (typeof PLATFORM_OPTIONS)[number]
 
-type WalletFieldOption = TradeStatusOption | FundingCexOption | PlatformOption
+type WalletFieldOption = TradeStatusOption | FundingSourceOption | PlatformOption
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") return null
@@ -50,17 +50,55 @@ export function normalizeTradeStatus(value: unknown) {
   return normalizeOption(value, TRADE_STATUS_OPTIONS)
 }
 
-export function normalizeFundingCex(value: unknown) {
-  return normalizeOption(value, FUNDING_CEX_OPTIONS)
+export function normalizeFundingSourceLabel(value: unknown) {
+  return normalizeOption(value, FUNDING_SOURCE_OPTIONS)
 }
 
 export function normalizePlatform(value: unknown) {
   return normalizeOption(value, PLATFORM_OPTIONS)
 }
 
-export function normalizePlannedDate(value: unknown) {
+export function normalizeFundedAt(value: unknown) {
   const normalized = normalizeText(value)
-  return normalized || null
+  if (!normalized) return null
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    const parsed = new Date(`${normalized}T00:00:00`)
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+  }
+
+  const parsed = new Date(normalized)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+}
+
+export function formatFundedAtInputValue(value: string | null | undefined) {
+  if (!value) return ""
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return ""
+  }
+
+  const local = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+export function formatFundedAtDisplay(value: string | null | undefined) {
+  if (!value) return "---"
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(parsed)
 }
 
 export function getWalletFieldBadgeClass(value: WalletFieldOption | null | undefined) {

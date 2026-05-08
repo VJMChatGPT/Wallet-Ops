@@ -2,11 +2,12 @@ import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { validateSolanaWalletAddress } from "@/lib/solana"
 import {
-  normalizeFundingCex,
+  normalizeFundedAt,
+  normalizeFundingSourceLabel,
   normalizePlatform,
-  normalizePlannedDate,
   normalizeTradeStatus,
 } from "@/lib/wallet-fields"
+import { sortWalletsByOrder } from "@/lib/wallet-order"
 
 type WalletType = "mine" | "external"
 
@@ -14,10 +15,11 @@ interface WalletInput {
   address: string
   label?: string
   type?: WalletType
+  sort_order?: number | null
   trade_status?: string | null
-  funding_cex?: string | null
+  funding_source_label?: string | null
   platform?: string | null
-  planned_date?: string | null
+  funded_at?: string | null
   lineNumber?: number
 }
 
@@ -31,20 +33,41 @@ function normalizeLabel(value: unknown) {
   return trimmed ? trimmed : null
 }
 
+function normalizeSortOrder(value: unknown) {
+  if (value === undefined) return undefined
+  if (value === null || value === "") return null
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error("sort_order must be a non-negative integer")
+  }
+
+  return value
+}
+
 function buildWalletMetadata(input: {
   trade_status?: unknown
+  funding_source_label?: unknown
   funding_cex?: unknown
   platform?: unknown
+  funded_at?: unknown
   planned_date?: unknown
 }) {
   return {
     trade_status:
       input.trade_status !== undefined ? normalizeTradeStatus(input.trade_status) : undefined,
-    funding_cex:
-      input.funding_cex !== undefined ? normalizeFundingCex(input.funding_cex) : undefined,
+    funding_source_label:
+      input.funding_source_label !== undefined
+        ? normalizeFundingSourceLabel(input.funding_source_label)
+        : input.funding_cex !== undefined
+          ? normalizeFundingSourceLabel(input.funding_cex)
+          : undefined,
     platform: input.platform !== undefined ? normalizePlatform(input.platform) : undefined,
-    planned_date:
-      input.planned_date !== undefined ? normalizePlannedDate(input.planned_date) : undefined,
+    funded_at:
+      input.funded_at !== undefined
+        ? normalizeFundedAt(input.funded_at)
+        : input.planned_date !== undefined
+          ? normalizeFundedAt(input.planned_date)
+          : undefined,
   }
 }
 
@@ -64,20 +87,36 @@ function toErrorResponse(error: unknown) {
   return NextResponse.json({ error: message }, { status: 500 })
 }
 
+async function getNextSortOrder(
+  supabase: Awaited<ReturnType<typeof createClient>>
+) {
+  const { data, error } = await supabase
+    .from("tracked_wallets")
+    .select("sort_order")
+    .order("sort_order", { ascending: false, nullsFirst: false })
+    .limit(1)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  const currentMax =
+    typeof data?.[0]?.sort_order === "number" ? data[0].sort_order : -1
+
+  return currentMax + 1
+}
+
 export async function GET() {
   try {
     const supabase = await createClient()
 
-    const { data, error } = await supabase
-      .from("tracked_wallets")
-      .select("*")
-      .order("created_at", { ascending: false })
+    const { data, error } = await supabase.from("tracked_wallets").select("*")
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json(data)
+    return NextResponse.json(sortWalletsByOrder(data || []))
   } catch (error) {
     return toErrorResponse(error)
   }
@@ -110,6 +149,8 @@ export async function POST(request: Request) {
     }
 
     const normalizedAddress = validation.normalizedAddress
+    const sortOrder = await getNextSortOrder(supabase)
+    const metadata = buildWalletMetadata(body)
 
     const { data, error } = await supabase
       .from("tracked_wallets")
@@ -117,10 +158,11 @@ export async function POST(request: Request) {
         address: normalizedAddress,
         label: normalizeLabel(label),
         type: normalizeWalletType(type),
+        sort_order: sortOrder,
         trade_status: normalizeTradeStatus(body.trade_status),
-        funding_cex: normalizeFundingCex(body.funding_cex),
+        funding_source_label: metadata.funding_source_label ?? null,
         platform: normalizePlatform(body.platform),
-        planned_date: normalizePlannedDate(body.planned_date),
+        funded_at: metadata.funded_at ?? null,
       })
       .select()
       .single()
@@ -162,10 +204,11 @@ async function handleBulkCreate(
     address: string
     label: string | null
     type: WalletType
+    sort_order?: number | null
     trade_status: string | null
-    funding_cex: string | null
+    funding_source_label: string | null
     platform: string | null
-    planned_date: string | null
+    funded_at: string | null
     lineNumber: number | null
   }[] = []
 
@@ -199,9 +242,11 @@ async function handleBulkCreate(
       label: normalizeLabel(wallet.label),
       type: normalizeWalletType(wallet.type),
       trade_status: normalizeTradeStatus(wallet.trade_status),
-      funding_cex: normalizeFundingCex(wallet.funding_cex),
+      funding_source_label: normalizeFundingSourceLabel(
+        wallet.funding_source_label
+      ),
       platform: normalizePlatform(wallet.platform),
-      planned_date: normalizePlannedDate(wallet.planned_date),
+      funded_at: normalizeFundedAt(wallet.funded_at),
       lineNumber,
     })
   }
@@ -245,17 +290,20 @@ async function handleBulkCreate(
       )
     }
 
+    const nextSortOrder = await getNextSortOrder(supabase)
+
     const { data, error: insertError } = await supabase
       .from("tracked_wallets")
       .insert(
-        insertableWallets.map((wallet) => ({
+        insertableWallets.map((wallet, index) => ({
           address: wallet.address,
           label: wallet.label,
           type: wallet.type,
+          sort_order: nextSortOrder + index,
           trade_status: wallet.trade_status,
-          funding_cex: wallet.funding_cex,
+          funding_source_label: wallet.funding_source_label,
           platform: wallet.platform,
-          planned_date: wallet.planned_date,
+          funded_at: wallet.funded_at,
         }))
       )
       .select()
@@ -358,17 +406,24 @@ export async function PATCH(request: Request) {
     const updatePayload = {
       ...(normalizedAddress ? { address: normalizedAddress } : {}),
       ...(label !== undefined ? { label: normalizeLabel(label) } : {}),
+      ...(body.sort_order !== undefined
+        ? { sort_order: normalizeSortOrder(body.sort_order) }
+        : {}),
       ...(body.trade_status !== undefined
         ? { trade_status: normalizeTradeStatus(body.trade_status) }
         : {}),
-      ...(body.funding_cex !== undefined
-        ? { funding_cex: normalizeFundingCex(body.funding_cex) }
+      ...(body.funding_source_label !== undefined || body.funding_cex !== undefined
+        ? {
+            funding_source_label: normalizeFundingSourceLabel(
+              body.funding_source_label ?? body.funding_cex
+            ),
+          }
         : {}),
       ...(body.platform !== undefined
         ? { platform: normalizePlatform(body.platform) }
         : {}),
-      ...(body.planned_date !== undefined
-        ? { planned_date: normalizePlannedDate(body.planned_date) }
+      ...(body.funded_at !== undefined || body.planned_date !== undefined
+        ? { funded_at: normalizeFundedAt(body.funded_at ?? body.planned_date) }
         : {}),
     }
 
