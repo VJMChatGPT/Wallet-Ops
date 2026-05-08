@@ -371,14 +371,7 @@ export async function detectWalletFundingMetadata(
   }
 }
 
-export async function loadFundingSourceAddressMap(supabase: {
-  from: (table: string) => {
-    select: (columns?: string) => Promise<{
-      data: FundingSourceAddressRow[] | null
-      error: { message: string } | null
-    }>
-  }
-}) {
+export async function loadFundingSourceAddressMap(supabase: any) {
   const { data, error } = await supabase
     .from("funding_source_addresses")
     .select("label,address,source")
@@ -387,27 +380,17 @@ export async function loadFundingSourceAddressMap(supabase: {
     throw new Error(error.message)
   }
 
-  return new Map(
-    (data || [])
-      .filter((row) => row.address && row.label)
-      .map((row) => [row.address, row.label])
+  const rows = (data || []) as FundingSourceAddressRow[]
+
+  return new Map<string, string>(
+    rows
+      .filter((row: FundingSourceAddressRow) => row.address && row.label)
+      .map((row: FundingSourceAddressRow) => [row.address, row.label])
   )
 }
 
 export async function enrichWalletFundingMetadata(
-  supabase: {
-    from: (table: string) => {
-      update: (values: Record<string, unknown>) => {
-        eq: (column: string, value: string) => Promise<{
-          error: { message: string } | null
-        }>
-      }
-      select: (columns?: string) => Promise<{
-        data: FundingSourceAddressRow[] | null
-        error: { message: string } | null
-      }>
-    }
-  },
+  supabase: any,
   wallets: TrackedWallet[]
 ) {
   if (!HELIUS_API_KEY || wallets.length === 0) {

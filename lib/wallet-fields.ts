@@ -101,7 +101,7 @@ export function formatFundedAtDisplay(value: string | null | undefined) {
   }).format(parsed)
 }
 
-export function getWalletFieldBadgeClass(value: WalletFieldOption | null | undefined) {
+export function getWalletFieldBadgeClass(value: string | null | undefined) {
   switch (value) {
     case "SI":
       return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"

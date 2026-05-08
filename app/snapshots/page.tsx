@@ -4,7 +4,6 @@ import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import useSWR from "swr"
 import { Navigation } from "@/components/navigation"
-import { SaveSnapshotDialog } from "@/components/save-snapshot-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -25,10 +24,14 @@ import { Badge } from "@/components/ui/badge"
 import { formatNumber } from "@/lib/api"
 import { formatSnapshotTimestamp } from "@/lib/dates"
 import { jsonFetcher, readApiResponse } from "@/lib/http"
-import type { PortfolioSnapshot } from "@/lib/types"
+import type { PortfolioSnapshot, WorkbookSheetWithWalletCount } from "@/lib/types"
 
 interface SnapshotsResponse {
   snapshots: PortfolioSnapshot[]
+}
+
+interface SheetsResponse {
+  sheets: WorkbookSheetWithWalletCount[]
 }
 
 export default function SnapshotsPage() {
@@ -36,24 +39,37 @@ export default function SnapshotsPage() {
     "/api/snapshots",
     jsonFetcher
   )
+  const { data: sheetsData } = useSWR<SheetsResponse>("/api/sheets", jsonFetcher)
   const snapshots = data?.snapshots || []
+  const sheets = sheetsData?.sheets || []
+  const [selectedSheetId, setSelectedSheetId] = useState<string>("all")
   const [fromId, setFromId] = useState<string>("")
   const [toId, setToId] = useState<string>("")
-  const compareHref = fromId && toId ? `/snapshots/compare?from=${fromId}&to=${toId}` : ""
+  const filteredSnapshots =
+    selectedSheetId === "all"
+      ? snapshots
+      : snapshots.filter((snapshot) => snapshot.sheet_id === selectedSheetId)
+  const selectedFrom = filteredSnapshots.find((snapshot) => snapshot.id === fromId) || null
+  const selectedTo = filteredSnapshots.find((snapshot) => snapshot.id === toId) || null
+  const canCompare =
+    Boolean(fromId && toId) &&
+    selectedFrom?.sheet_id &&
+    selectedFrom.sheet_id === selectedTo?.sheet_id
+  const compareHref = canCompare ? `/snapshots/compare?from=${fromId}&to=${toId}` : ""
 
   const compareDefaults = useMemo(() => {
-    if (snapshots.length >= 2) {
+    if (filteredSnapshots.length >= 2) {
       return {
-        from: snapshots[1].id,
-        to: snapshots[0].id,
+        from: filteredSnapshots[1].id,
+        to: filteredSnapshots[0].id,
       }
     }
 
     return {
-      from: snapshots[0]?.id || "",
-      to: snapshots[0]?.id || "",
+      from: filteredSnapshots[0]?.id || "",
+      to: filteredSnapshots[0]?.id || "",
     }
-  }, [snapshots])
+  }, [filteredSnapshots])
 
   useEffect(() => {
     if (!fromId && compareDefaults.from) {
@@ -63,6 +79,11 @@ export default function SnapshotsPage() {
       setToId(compareDefaults.to)
     }
   }, [compareDefaults, fromId, toId])
+
+  useEffect(() => {
+    setFromId(compareDefaults.from)
+    setToId(compareDefaults.to)
+  }, [selectedSheetId, compareDefaults.from, compareDefaults.to])
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this snapshot permanently?")) {
@@ -87,10 +108,12 @@ export default function SnapshotsPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Snapshots</h1>
             <p className="mt-1 text-muted-foreground">
-              Freeze wallet ownership before and after launches, then compare the result.
+              Frozen captures grouped by workbook sheet, ready for before/after launch comparisons.
             </p>
           </div>
-          <SaveSnapshotDialog onSaved={() => mutate()} />
+          <Button asChild variant="outline" size="sm">
+            <Link href="/">Back to Workbook</Link>
+          </Button>
         </div>
 
         {error && (
@@ -101,7 +124,23 @@ export default function SnapshotsPage() {
           </div>
         )}
 
-        <div className="mb-8 grid gap-4 rounded-lg border border-border bg-card p-4 lg:grid-cols-[1fr_1fr_auto]">
+        <div className="mb-8 grid gap-4 rounded-lg border border-border bg-card p-4 lg:grid-cols-[1fr_1fr_1fr_auto]">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Sheet</p>
+            <Select value={selectedSheetId} onValueChange={setSelectedSheetId}>
+              <SelectTrigger>
+                <SelectValue placeholder="All sheets" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sheets</SelectItem>
+                {sheets.map((sheet) => (
+                  <SelectItem key={sheet.id} value={sheet.id}>
+                    {sheet.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <p className="text-sm font-medium">Compare from</p>
             <Select value={fromId} onValueChange={setFromId}>
@@ -109,7 +148,7 @@ export default function SnapshotsPage() {
                 <SelectValue placeholder="Select starting snapshot" />
               </SelectTrigger>
               <SelectContent>
-                {snapshots.map((snapshot) => (
+                {filteredSnapshots.map((snapshot) => (
                   <SelectItem key={snapshot.id} value={snapshot.id}>
                     {(snapshot.name || "Untitled snapshot") + " - " + formatSnapshotTimestamp(snapshot.created_at)}
                   </SelectItem>
@@ -124,7 +163,7 @@ export default function SnapshotsPage() {
                 <SelectValue placeholder="Select ending snapshot" />
               </SelectTrigger>
               <SelectContent>
-                {snapshots.map((snapshot) => (
+                {filteredSnapshots.map((snapshot) => (
                   <SelectItem key={snapshot.id} value={snapshot.id}>
                     {(snapshot.name || "Untitled snapshot") + " - " + formatSnapshotTimestamp(snapshot.created_at)}
                   </SelectItem>
@@ -148,11 +187,11 @@ export default function SnapshotsPage() {
             <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             <p className="mt-4 text-sm text-muted-foreground">Loading snapshots...</p>
           </div>
-        ) : snapshots.length === 0 ? (
+        ) : filteredSnapshots.length === 0 ? (
           <div className="rounded-lg border border-border bg-card p-12 text-center">
             <h2 className="text-lg font-semibold">No snapshots yet</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Save one from the dashboard before a launch, then another afterwards.
+              Save one from a sheet before a launch, then another afterwards.
             </p>
           </div>
         ) : (
@@ -161,6 +200,7 @@ export default function SnapshotsPage() {
               <TableHeader>
                 <TableRow className="border-border hover:bg-transparent">
                   <TableHead>Name</TableHead>
+                  <TableHead>Sheet</TableHead>
                   <TableHead>Captured</TableHead>
                   <TableHead className="text-right">Total SOL</TableHead>
                   <TableHead>Selected Token</TableHead>
@@ -171,9 +211,11 @@ export default function SnapshotsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {snapshots.map((snapshot, index) => {
+                {filteredSnapshots.map((snapshot, index) => {
                   const compareTarget =
-                    snapshots[index + 1] || snapshots[index - 1] || null
+                    filteredSnapshots[index + 1] || filteredSnapshots[index - 1] || null
+                  const canCompareRow =
+                    compareTarget && compareTarget.sheet_id === snapshot.sheet_id
 
                   return (
                     <TableRow key={snapshot.id} className="border-border">
@@ -186,6 +228,9 @@ export default function SnapshotsPage() {
                             {snapshot.id}
                           </p>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{snapshot.sheet_name || "Unknown sheet"}</Badge>
                       </TableCell>
                       <TableCell>{formatSnapshotTimestamp(snapshot.created_at)}</TableCell>
                       <TableCell className="text-right font-mono">
@@ -224,7 +269,7 @@ export default function SnapshotsPage() {
                           <Button asChild variant="outline" size="sm">
                             <Link href={`/snapshots/${snapshot.id}`}>Open</Link>
                           </Button>
-                          {compareTarget ? (
+                          {canCompareRow ? (
                             <Button
                               asChild
                               variant="outline"

@@ -47,6 +47,8 @@ export function buildSnapshotWalletRows(walletSummaries: WalletHoldingSummary[])
 export function buildSnapshotInsert(holdings: HoldingsResponseData, name: string | null) {
   return {
     name,
+    sheet_id: holdings.sheet?.id || null,
+    sheet_name: holdings.sheet?.name || "Unknown Sheet",
     total_portfolio_usd: holdings.totalValueUsd,
     wallet_count: holdings.walletSummaries.length,
     total_sol_balance: holdings.totalSolBalance,
@@ -61,6 +63,8 @@ export function buildSnapshotInsert(holdings: HoldingsResponseData, name: string
 export function normalizeSnapshot(snapshot: PortfolioSnapshot): PortfolioSnapshot {
   return {
     ...snapshot,
+    sheet_id: snapshot.sheet_id ?? null,
+    sheet_name: snapshot.sheet_name ?? null,
     total_portfolio_usd: toNumber(snapshot.total_portfolio_usd),
     wallet_count: Number(snapshot.wallet_count),
     total_sol_balance: toNumber(snapshot.total_sol_balance),
@@ -198,6 +202,8 @@ export function compareSnapshots(
   wallets.sort((a, b) => Math.abs(b.deltaTokenAmount) - Math.abs(a.deltaTokenAmount))
 
   return {
+    sheetId: normalizedTo.sheet_id || normalizedFrom.sheet_id || null,
+    sheetName: normalizedTo.sheet_name || normalizedFrom.sheet_name || null,
     from: normalizedFrom,
     to: normalizedTo,
     startSolBalance,

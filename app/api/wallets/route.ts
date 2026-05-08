@@ -8,6 +8,8 @@ import {
   normalizeTradeStatus,
 } from "@/lib/wallet-fields"
 import { sortWalletsByOrder } from "@/lib/wallet-order"
+import { getOrCreateMasterSheet } from "@/lib/sheets"
+import type { TrackedWallet } from "@/lib/types"
 
 type WalletType = "mine" | "external"
 
@@ -106,6 +108,57 @@ async function getNextSortOrder(
   return currentMax + 1
 }
 
+async function syncWalletsToMasterSheet(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  wallets: TrackedWallet[]
+) {
+  if (wallets.length === 0) {
+    return
+  }
+
+  const masterSheet = await getOrCreateMasterSheet(supabase)
+  const { data: existingRows, error: existingRowsError } = await supabase
+    .from("sheet_wallets")
+    .select("wallet_id")
+    .eq("sheet_id", masterSheet.id)
+    .in(
+      "wallet_id",
+      wallets.map((wallet) => wallet.id)
+    )
+
+  if (existingRowsError) {
+    throw new Error(existingRowsError.message)
+  }
+
+  const existingWalletIds = new Set((existingRows || []).map((row) => row.wallet_id))
+  const rowsToInsert = wallets
+    .filter((wallet) => !existingWalletIds.has(wallet.id))
+    .map((wallet, index) => ({
+      sheet_id: masterSheet.id,
+      wallet_id: wallet.id,
+      row_order: wallet.sort_order ?? index,
+      label: wallet.label,
+      trade_status: wallet.trade_status,
+      funding_source_label: wallet.funding_source_label,
+      funding_source_address: wallet.funding_source_address,
+      funding_label_source: wallet.funding_label_source,
+      first_funder_address: wallet.first_funder_address,
+      platform: wallet.platform,
+      funded_at: wallet.funded_at,
+      funding_detection_method: wallet.funding_detection_method,
+      funding_detected_at: wallet.funding_detected_at,
+    }))
+
+  if (rowsToInsert.length === 0) {
+    return
+  }
+
+  const { error: insertError } = await supabase.from("sheet_wallets").insert(rowsToInsert)
+  if (insertError) {
+    throw new Error(insertError.message)
+  }
+}
+
 export async function GET() {
   try {
     const supabase = await createClient()
@@ -176,6 +229,8 @@ export async function POST(request: Request) {
       }
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    await syncWalletsToMasterSheet(supabase, [data as TrackedWallet])
 
     return NextResponse.json(data, { status: 201 })
   } catch (error) {
@@ -312,6 +367,8 @@ async function handleBulkCreate(
       return NextResponse.json({ error: insertError.message }, { status: 500 })
     }
 
+    await syncWalletsToMasterSheet(supabase, (data || []) as TrackedWallet[])
+
     return NextResponse.json({
       wallets: data || [],
       failures,
@@ -436,6 +493,38 @@ export async function PATCH(request: Request) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    const masterSheet = await getOrCreateMasterSheet(supabase)
+    const masterUpdatePayload = {
+      ...(body.label !== undefined ? { label: normalizeLabel(body.label) } : {}),
+      ...(body.trade_status !== undefined
+        ? { trade_status: normalizeTradeStatus(body.trade_status) }
+        : {}),
+      ...(body.funding_source_label !== undefined || body.funding_cex !== undefined
+        ? {
+            funding_source_label: normalizeFundingSourceLabel(
+              body.funding_source_label ?? body.funding_cex
+            ),
+          }
+        : {}),
+      ...(body.platform !== undefined
+        ? { platform: normalizePlatform(body.platform) }
+        : {}),
+      ...(body.funded_at !== undefined || body.planned_date !== undefined
+        ? { funded_at: normalizeFundedAt(body.funded_at ?? body.planned_date) }
+        : {}),
+      ...(body.sort_order !== undefined
+        ? { row_order: normalizeSortOrder(body.sort_order) }
+        : {}),
+    }
+
+    if (Object.keys(masterUpdatePayload).length > 0) {
+      await supabase
+        .from("sheet_wallets")
+        .update(masterUpdatePayload)
+        .eq("sheet_id", masterSheet.id)
+        .eq("wallet_id", id)
     }
 
     return NextResponse.json(data)

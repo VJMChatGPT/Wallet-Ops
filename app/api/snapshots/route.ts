@@ -13,13 +13,22 @@ function normalizeName(value: unknown) {
   return trimmed ? trimmed : null
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient()
-    const { data, error } = await supabase
+    const { searchParams } = new URL(request.url)
+    const sheetId = searchParams.get("sheetId")
+
+    let query = supabase
       .from("portfolio_snapshots")
       .select("*")
       .order("created_at", { ascending: false })
+
+    if (sheetId) {
+      query = query.eq("sheet_id", sheetId)
+    }
+
+    const { data, error } = await query
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
@@ -44,12 +53,20 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const body = await request.json().catch(() => ({}))
     const name = normalizeName(body?.name)
-    const selectedTokenMint =
-      typeof body?.selectedTokenMint === "string" && body.selectedTokenMint.trim()
-        ? body.selectedTokenMint.trim()
+    const sheetId =
+      typeof body?.sheetId === "string" && body.sheetId.trim()
+        ? body.sheetId.trim()
         : null
+
+    if (!sheetId) {
+      return NextResponse.json(
+        { error: "sheetId is required" },
+        { status: 400 }
+      )
+    }
+
     const holdings = await getLiveHoldingsData(supabase, {
-      tokenMint: selectedTokenMint,
+      sheetId,
     })
 
     const { data: snapshot, error: snapshotError } = await supabase

@@ -55,7 +55,7 @@ export default function TokenPage({
   )
 
   const { data: holdingsData, isLoading: holdingsLoading, mutate: mutateHoldings } = useSWR<HoldingsResponse>(
-    "/api/holdings",
+    `/api/holdings?token=${mint}`,
     fetcher
   )
 

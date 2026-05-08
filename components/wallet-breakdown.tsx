@@ -20,11 +20,12 @@ import {
 } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { SolscanLink } from "@/components/solscan-link"
 import { cn } from "@/lib/utils"
 import { formatNumber } from "@/lib/api"
 import type { WalletHoldingSummary } from "@/lib/types"
-import { ChevronDown, ChevronUp } from "lucide-react"
+import { ChevronDown, ChevronUp, X } from "lucide-react"
 import {
   formatFundedAtInputValue,
   FUNDING_SOURCE_OPTIONS,
@@ -38,6 +39,11 @@ interface WalletBreakdownProps {
   selectedToken: string | null
   selectedTokenSymbol?: string
   isLoading?: boolean
+  emptyMessage?: string
+  selectable?: boolean
+  selectedWalletIds?: string[]
+  onToggleWallet?: (walletId: string, checked: boolean) => void
+  onToggleAllWallets?: (checked: boolean) => void
   onUpdateWallet?: (
     walletId: string,
     patch: {
@@ -50,6 +56,7 @@ interface WalletBreakdownProps {
     }
   ) => Promise<void>
   onMoveWallet?: (walletId: string, direction: "up" | "down") => Promise<void>
+  onRemoveWallet?: (walletId: string) => Promise<void>
 }
 
 function shortAddress(address: string) {
@@ -81,8 +88,14 @@ export function WalletBreakdown({
   selectedToken,
   selectedTokenSymbol,
   isLoading,
+  emptyMessage,
+  selectable,
+  selectedWalletIds = [],
+  onToggleWallet,
+  onToggleAllWallets,
   onUpdateWallet,
   onMoveWallet,
+  onRemoveWallet,
 }: WalletBreakdownProps) {
   const totalSol = wallets.reduce((sum, wallet) => sum + (wallet.solBalance || 0), 0)
   const totalUsdc = wallets.reduce((sum, wallet) => sum + wallet.usdcBalance, 0)
@@ -94,6 +107,13 @@ export function WalletBreakdown({
     (sum, wallet) => sum + (wallet.selectedTokenSupplyPercent || 0),
     0
   )
+  const allSelectableWalletIds = wallets
+    .map((wallet) => wallet.walletId)
+    .filter((walletId): walletId is string => Boolean(walletId))
+  const areAllWalletsSelected =
+    selectable &&
+    allSelectableWalletIds.length > 0 &&
+    allSelectableWalletIds.every((walletId) => selectedWalletIds.includes(walletId))
 
   if (isLoading) {
     return (
@@ -107,7 +127,7 @@ export function WalletBreakdown({
   if (wallets.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <p className="text-muted-foreground">No wallets tracked yet.</p>
+        <p className="text-muted-foreground">{emptyMessage || "No wallets tracked yet."}</p>
       </div>
     )
   }
@@ -117,6 +137,18 @@ export function WalletBreakdown({
       <Table>
         <TableHeader>
           <TableRow className="border-border hover:bg-transparent">
+            {selectable && (
+              <TableHead className="w-[48px]">
+                <Checkbox
+                  checked={areAllWalletsSelected}
+                  onCheckedChange={(checked) => {
+                    if (onToggleAllWallets) {
+                      onToggleAllWallets(Boolean(checked))
+                    }
+                  }}
+                />
+              </TableHead>
+            )}
             <TableHead className="w-[72px]">Orden</TableHead>
             <TableHead>Label</TableHead>
             <TableHead>Address</TableHead>
@@ -137,11 +169,26 @@ export function WalletBreakdown({
               </div>
             </TableHead>
             <TableHead className="text-right">% Supply</TableHead>
+            {onRemoveWallet && <TableHead className="w-[60px]" />}
           </TableRow>
         </TableHeader>
         <TableBody>
           {wallets.map((wallet, index) => (
             <TableRow key={wallet.walletAddress} className="border-border">
+              {selectable && (
+                <TableCell>
+                  <Checkbox
+                    checked={
+                      wallet.walletId ? selectedWalletIds.includes(wallet.walletId) : false
+                    }
+                    onCheckedChange={(checked) => {
+                      if (wallet.walletId && onToggleWallet) {
+                        onToggleWallet(wallet.walletId, Boolean(checked))
+                      }
+                    }}
+                  />
+                </TableCell>
+              )}
               <TableCell>
                 <div className="flex items-center gap-1">
                   <Button
@@ -270,9 +317,26 @@ export function WalletBreakdown({
               <TableCell className="text-right font-mono font-semibold text-primary">
                 {selectedToken ? formatSupplyPercent(wallet.selectedTokenSupplyPercent) : "-"}
               </TableCell>
+              {onRemoveWallet && (
+                <TableCell className="text-right">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    disabled={!wallet.walletId}
+                    onClick={() =>
+                      wallet.walletId ? void onRemoveWallet(wallet.walletId) : undefined
+                    }
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </TableCell>
+              )}
             </TableRow>
           ))}
           <TableRow className="border-border bg-muted/30">
+            {selectable && <TableCell />}
             <TableCell />
             <TableCell className="font-semibold">Total</TableCell>
             <TableCell />
@@ -297,6 +361,7 @@ export function WalletBreakdown({
             <TableCell className="text-right font-mono font-semibold text-primary">
               {selectedToken ? formatSupplyPercent(totalSelectedTokenSupplyPercent) : "-"}
             </TableCell>
+            {onRemoveWallet && <TableCell />}
           </TableRow>
         </TableBody>
       </Table>

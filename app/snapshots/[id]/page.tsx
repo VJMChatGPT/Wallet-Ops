@@ -38,7 +38,7 @@ export default function SnapshotDetailPage() {
             </h1>
             <p className="mt-1 text-muted-foreground">
               {data?.snapshot
-                ? `Captured ${formatSnapshotTimestamp(data.snapshot.created_at)}`
+                ? `${data.snapshot.sheet_name || "Unknown sheet"} • Captured ${formatSnapshotTimestamp(data.snapshot.created_at)}`
                 : "Frozen wallet operations state"}
             </p>
           </div>

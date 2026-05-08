@@ -1,5 +1,6 @@
 import type {
   HeliusAsset,
+  DexScreenerPair,
   DexScreenerResponse,
   TokenHolding,
   TrackedWallet,
@@ -168,7 +169,7 @@ export async function getTokensFromDexScreener(
 // Get the best pair for a token (highest liquidity)
 export function getBestPair(
   pairs: DexScreenerResponse["pairs"]
-): DexScreenerResponse["pairs"][0] | null {
+): DexScreenerPair | null {
   if (!pairs || pairs.length === 0) return null
 
   // Sort by liquidity (descending) and return the best one

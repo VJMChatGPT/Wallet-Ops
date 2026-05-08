@@ -17,6 +17,40 @@ export interface TrackedWallet {
   created_at: string
 }
 
+export interface WorkbookSheet {
+  id: string
+  name: string
+  type: "master" | "launch"
+  token_mint: string | null
+  token_symbol: string | null
+  sort_order: number
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SheetWallet {
+  id: string
+  sheet_id: string
+  wallet_id: string
+  row_order: number
+  label: string | null
+  trade_status: string | null
+  funding_source_label: string | null
+  funding_source_address: string | null
+  funding_label_source: string | null
+  first_funder_address: string | null
+  platform: string | null
+  funded_at: string | null
+  funding_detection_method: string | null
+  funding_detected_at: string | null
+  created_at: string
+}
+
+export interface WorkbookSheetWithWalletCount extends WorkbookSheet {
+  wallet_count: number
+}
+
 export interface TrackedToken {
   id: string
   mint: string
@@ -173,6 +207,8 @@ export interface AggregatedTokenHolding {
 }
 
 export interface WalletHoldingSummary {
+  sheetId: string
+  sheetType: "master" | "launch"
   walletId: string | null
   walletAddress: string
   walletLabel: string | null
@@ -221,6 +257,7 @@ export interface TokenWatchAlert {
 }
 
 export interface HoldingsResponseData {
+  sheet: WorkbookSheet | null
   holdings: TokenHolding[]
   aggregated: AggregatedTokenHolding[]
   walletSummaries: WalletHoldingSummary[]
@@ -238,6 +275,8 @@ export interface HoldingsResponseData {
 export interface PortfolioSnapshot {
   id: string
   name: string | null
+  sheet_id: string | null
+  sheet_name: string | null
   total_portfolio_usd: number | string
   wallet_count: number
   selected_token_mint: string | null
@@ -297,6 +336,8 @@ export interface SnapshotWalletComparisonRow {
 }
 
 export interface SnapshotComparisonResponse {
+  sheetId: string | null
+  sheetName: string | null
   from: PortfolioSnapshot
   to: PortfolioSnapshot
   startSolBalance: number

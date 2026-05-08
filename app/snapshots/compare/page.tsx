@@ -42,7 +42,7 @@ function SnapshotCompareContent() {
             <h1 className="text-3xl font-bold tracking-tight">Snapshot Comparison</h1>
             <p className="mt-1 text-muted-foreground">
               {data
-                ? `From ${formatSnapshotTimestamp(data.from.created_at)} to ${formatSnapshotTimestamp(data.to.created_at)}`
+                ? `${data.sheetName || "Unknown sheet"} • From ${formatSnapshotTimestamp(data.from.created_at)} to ${formatSnapshotTimestamp(data.to.created_at)}`
                 : "Compare two frozen wallet operation captures"}
             </p>
           </div>
@@ -72,14 +72,6 @@ function SnapshotCompareContent() {
           </div>
         ) : data ? (
           <div className="space-y-8">
-            {data.tokenMismatch && (
-              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
-                <p className="text-sm text-amber-200">
-                  These snapshots were saved with different selected tokens. The
-                  token amount comparison may not be meaningful.
-                </p>
-              </div>
-            )}
             <SnapshotComparisonSummary
               startSolBalance={data.startSolBalance}
               endSolBalance={data.endSolBalance}

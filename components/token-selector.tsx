@@ -63,7 +63,7 @@ export function TokenSelector({
             onValueChange={(value) => onSelectToken(value === "all" ? null : value)}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select a token to filter">
+              <SelectValue placeholder="Assign a token to this sheet">
                 {selectedToken ? (
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary" className="font-mono text-xs">
@@ -72,7 +72,7 @@ export function TokenSelector({
                     <span className="truncate">{selectedTokenData?.name || "Unknown"}</span>
                   </div>
                 ) : (
-                  "All Tokens"
+                  "No token assigned"
                 )}
               </SelectValue>
             </SelectTrigger>
@@ -80,7 +80,7 @@ export function TokenSelector({
               <SelectItem value="all">
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">ALL</Badge>
-                  <span>Show All Tokens</span>
+                  <span>No token assigned</span>
                 </div>
               </SelectItem>
               {tokens.map((token) => (
@@ -109,7 +109,7 @@ export function TokenSelector({
       {tokens.length === 0 && (
         <div className="rounded-lg border border-dashed border-border p-6 text-center">
           <p className="text-sm text-muted-foreground mb-3">
-            No tokens tracked yet. Add a token to start filtering your holdings.
+            No extra tracked tokens yet. Add one to use it as the active launch token.
           </p>
           <AddTokenDialog
             onAdd={onAddToken}

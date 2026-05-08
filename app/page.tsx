@@ -1,74 +1,67 @@
 "use client"
 
-import { useCallback, useState, useEffect, Suspense } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
+import { toast } from "sonner"
 import { AddWalletDialog } from "@/components/add-wallet-dialog"
+import { AddWalletsToSheetDialog } from "@/components/add-wallets-to-sheet-dialog"
+import { CreateSheetDialog } from "@/components/create-sheet-dialog"
 import { Navigation } from "@/components/navigation"
+import { RenameSheetDialog } from "@/components/rename-sheet-dialog"
+import { SaveSnapshotDialog } from "@/components/save-snapshot-dialog"
 import { StatsCard } from "@/components/stats-card"
 import { TokenSelector } from "@/components/token-selector"
 import { WalletBreakdown } from "@/components/wallet-breakdown"
-import { SaveSnapshotDialog } from "@/components/save-snapshot-dialog"
+import { WorkbookTabs } from "@/components/workbook-tabs"
 import { Button } from "@/components/ui/button"
-import { Coins, Percent, Wallet, DatabaseZap, CircleDollarSign } from "lucide-react"
+import { CircleDollarSign, Coins, DatabaseZap, Percent, Wallet } from "lucide-react"
 import { formatNumber } from "@/lib/api"
 import { jsonFetcher, readApiResponse } from "@/lib/http"
 import type {
   HoldingsResponseData,
   TrackedToken,
   TrackedWallet,
+  WorkbookSheetWithWalletCount,
 } from "@/lib/types"
-
-function formatPercentValue(value: number | null | undefined, digits = 4) {
-  return typeof value === "number" ? `${value.toFixed(digits)}%` : "-"
-}
 
 interface TokensResponse {
   tokens: TrackedToken[]
 }
 
-// Wrapper component to handle Suspense for useSearchParams
-export default function DashboardPage() {
+interface SheetsResponse {
+  sheets: WorkbookSheetWithWalletCount[]
+}
+
+function formatPercentValue(value: number | null | undefined, digits = 4) {
+  return typeof value === "number" ? `${value.toFixed(digits)}%` : "-"
+}
+
+export default function WalletWorkbookPage() {
   return (
-    <Suspense fallback={<DashboardSkeleton />}>
-      <DashboardContent />
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <WalletWorkbookContent />
     </Suspense>
   )
 }
 
-function DashboardSkeleton() {
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="h-16 border-b border-border bg-card" />
-      <main className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <div className="h-9 w-48 animate-pulse rounded bg-muted" />
-          <div className="mt-2 h-5 w-72 animate-pulse rounded bg-muted" />
-        </div>
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-32 animate-pulse rounded-lg bg-card border border-border" />
-          ))}
-        </div>
-      </main>
-    </div>
-  )
-}
-
-function DashboardContent() {
+function WalletWorkbookContent() {
+  const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
-  const [selectedToken, setSelectedToken] = useState<string | null>(null)
+  const sheetParam = searchParams.get("sheet")
 
-  // Initialize selected token from URL query param
-  useEffect(() => {
-    const tokenParam = searchParams.get("token")
-    if (tokenParam) {
-      setSelectedToken(tokenParam)
-    }
-  }, [searchParams])
+  const [selectedWalletIds, setSelectedWalletIds] = useState<string[]>([])
+  const [createSheetOpen, setCreateSheetOpen] = useState(false)
+  const [renameSheetOpen, setRenameSheetOpen] = useState(false)
+  const [addToSheetOpen, setAddToSheetOpen] = useState(false)
+  const [renameTarget, setRenameTarget] = useState<WorkbookSheetWithWalletCount | null>(null)
 
-  // Fetch tracked tokens
+  const { data: sheetsData, mutate: mutateSheets } = useSWR<SheetsResponse>(
+    "/api/sheets",
+    jsonFetcher
+  )
   const { data: tokensData, mutate: mutateTokens } = useSWR<TokensResponse>(
     "/api/tokens",
     jsonFetcher
@@ -78,70 +71,118 @@ function DashboardContent() {
     jsonFetcher
   )
 
-  // Fetch holdings (optionally filtered by token)
-  const holdingsUrl = selectedToken
-    ? `/api/holdings?token=${selectedToken}`
-    : "/api/holdings"
+  const sheets = sheetsData?.sheets || []
+  const activeSheet = useMemo(
+    () => sheets.find((sheet) => sheet.id === sheetParam) || sheets[0] || null,
+    [sheetParam, sheets]
+  )
+  const activeSheetId = activeSheet?.id || null
 
-  const { data, error, isLoading, mutate } = useSWR<HoldingsResponseData>(
-    holdingsUrl,
-    jsonFetcher,
-    {
-      refreshInterval: 15000,
-      revalidateOnFocus: false,
-    }
+  useEffect(() => {
+    if (!activeSheetId) return
+    if (sheetParam === activeSheetId) return
+
+    const nextParams = new URLSearchParams(searchParams.toString())
+    nextParams.set("sheet", activeSheetId)
+    router.replace(`${pathname}?${nextParams.toString()}`)
+  }, [activeSheetId, pathname, router, searchParams, sheetParam])
+
+  useEffect(() => {
+    setSelectedWalletIds([])
+  }, [activeSheetId])
+
+  const holdingsUrl = activeSheetId ? `/api/sheets/${activeSheetId}/holdings` : null
+  const {
+    data: holdingsData,
+    error,
+    isLoading,
+    mutate: mutateHoldings,
+  } = useSWR<HoldingsResponseData>(holdingsUrl, jsonFetcher, {
+    refreshInterval: 15000,
+    revalidateOnFocus: false,
+  })
+
+  const trackedTokens = tokensData?.tokens || []
+  const walletSummaries = holdingsData?.walletSummaries || []
+  const totalSol = holdingsData?.totalSolBalance || 0
+  const totalUsdc = holdingsData?.totalUsdcBalance || 0
+  const totalSelectedTokenBalance = holdingsData?.totalSelectedTokenBalance || 0
+  const totalSelectedTokenSupplyPercent = holdingsData?.totalSelectedTokenSupplyPercent
+  const walletCount = holdingsData?.walletCount || 0
+  const selectedTokenMint = activeSheet?.token_mint || null
+  const selectedTokenInfo = selectedTokenMint
+    ? trackedTokens.find((token) => token.mint === selectedTokenMint) || null
+    : null
+  const isMasterSheet = activeSheet?.type === "master"
+  const launchSheets = sheets.filter((sheet) => sheet.type === "launch")
+
+  const handleSelectSheet = useCallback(
+    (sheetId: string) => {
+      const nextParams = new URLSearchParams(searchParams.toString())
+      nextParams.set("sheet", sheetId)
+      router.push(`${pathname}?${nextParams.toString()}`)
+    },
+    [pathname, router, searchParams]
   )
 
-  const walletCount = data?.walletCount || 0
-  const trackedTokens = tokensData?.tokens || []
-  const trackedTokenCount = data?.trackedTokenCount ?? trackedTokens.length
-  const walletSummaries = data?.walletSummaries || []
-  const totalSol = data?.totalSolBalance || 0
-  const totalUsdc = data?.totalUsdcBalance || 0
-  const totalSelectedTokenBalance = data?.totalSelectedTokenBalance || 0
-  const totalSelectedTokenSupplyPercent = data?.totalSelectedTokenSupplyPercent
-
-  // Get selected token info for display
-  const selectedTokenInfo = selectedToken
-    ? trackedTokens.find((t) => t.mint === selectedToken)
-    : null
-
   const handleRefresh = useCallback(() => {
-    mutate()
-    mutateTokens()
-    mutateWallets()
-  }, [mutate, mutateTokens, mutateWallets])
+    void Promise.all([mutateSheets(), mutateTokens(), mutateWallets(), mutateHoldings()])
+  }, [mutateSheets, mutateTokens, mutateWallets, mutateHoldings])
+
+  const handlePatchActiveSheet = useCallback(
+    async (patch: Record<string, unknown>) => {
+      if (!activeSheetId) {
+        return
+      }
+
+      await readApiResponse(
+        await fetch(`/api/sheets/${activeSheetId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        })
+      )
+
+      await Promise.all([mutateSheets(), mutateHoldings()])
+    },
+    [activeSheetId, mutateHoldings, mutateSheets]
+  )
 
   const handleAddToken = useCallback(
     async (mint: string) => {
-      const res = await fetch("/api/tokens", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mint }),
-      })
-      await readApiResponse(res)
+      const result = await readApiResponse<{ token: TrackedToken }>(
+        await fetch("/api/tokens", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mint }),
+        })
+      )
+
       await mutateTokens()
-      // Auto-select the newly added token
-      setSelectedToken(mint)
-      // Refresh holdings to show the new token's data
-      await mutate()
+      await handlePatchActiveSheet({
+        token_mint: result.token.mint,
+        token_symbol: result.token.symbol,
+      })
     },
-    [mutateTokens, mutate]
+    [handlePatchActiveSheet, mutateTokens]
   )
 
   const handleDeleteToken = useCallback(
     async (mint: string) => {
-      const res = await fetch(`/api/tokens?mint=${mint}`, { method: "DELETE" })
-      await readApiResponse(res)
+      await readApiResponse(await fetch(`/api/tokens?mint=${mint}`, { method: "DELETE" }))
       await mutateTokens()
-      if (selectedToken === mint) {
-        setSelectedToken(null)
+
+      if (activeSheet?.token_mint === mint) {
+        await handlePatchActiveSheet({
+          token_mint: null,
+          token_symbol: null,
+        })
       }
     },
-    [mutateTokens, selectedToken]
+    [activeSheet?.token_mint, handlePatchActiveSheet, mutateTokens]
   )
 
-  const handleUpdateWallet = useCallback(
+  const handleUpdateSheetWallet = useCallback(
     async (
       walletId: string,
       patch: {
@@ -153,68 +194,31 @@ function DashboardContent() {
         sort_order?: number | null
       }
     ) => {
-      const response = await fetch(`/api/wallets/${walletId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      })
+      if (!activeSheetId) return
 
-      await readApiResponse(response)
-      await Promise.all([mutate(), mutateWallets()])
+      await readApiResponse(
+        await fetch(`/api/sheets/${activeSheetId}/wallets/${walletId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...patch,
+            row_order: patch.sort_order,
+          }),
+        })
+      )
+
+      await mutateHoldings()
     },
-    [mutate, mutateWallets]
-  )
-
-  const handleAddWallet = useCallback(
-    async (wallet: {
-      address: string
-      label: string
-      type: "mine" | "external"
-    }) => {
-      const response = await fetch("/api/wallets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(wallet),
-      })
-
-      await readApiResponse(response)
-      await Promise.all([mutate(), mutateWallets()])
-    },
-    [mutate, mutateWallets]
-  )
-
-  const handleAddWalletsBulk = useCallback(
-    async (
-      walletsToAdd: {
-        address: string
-        label: string
-        type: "mine" | "external"
-        lineNumber: number
-      }[]
-    ) => {
-      const response = await fetch("/api/wallets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallets: walletsToAdd }),
-      })
-
-      const data = await readApiResponse<{
-        insertedCount: number
-        failures?: { address: string; lineNumber: number | null; error: string }[]
-      }>(response)
-
-      await Promise.all([mutate(), mutateWallets()])
-      return data
-    },
-    [mutate, mutateWallets]
+    [activeSheetId, mutateHoldings]
   )
 
   const handleMoveWallet = useCallback(
     async (walletId: string, direction: "up" | "down") => {
-      const currentIndex = walletSummaries.findIndex(
-        (wallet) => wallet.walletId === walletId
-      )
+      if (!activeSheetId) {
+        return
+      }
 
+      const currentIndex = walletSummaries.findIndex((wallet) => wallet.walletId === walletId)
       if (currentIndex === -1) {
         return
       }
@@ -226,7 +230,6 @@ function DashboardContent() {
 
       const currentWallet = walletSummaries[currentIndex]
       const targetWallet = walletSummaries[targetIndex]
-
       if (!currentWallet?.walletId || !targetWallet?.walletId) {
         return
       }
@@ -235,77 +238,272 @@ function DashboardContent() {
       const targetSortOrder = targetWallet.sortOrder ?? targetIndex
 
       await Promise.all([
-        fetch(`/api/wallets/${currentWallet.walletId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sort_order: targetSortOrder }),
-        }).then(readApiResponse),
-        fetch(`/api/wallets/${targetWallet.walletId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sort_order: currentSortOrder }),
-        }).then(readApiResponse),
+        readApiResponse(
+          await fetch(`/api/sheets/${activeSheetId}/wallets/${currentWallet.walletId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ row_order: targetSortOrder }),
+          })
+        ),
+        readApiResponse(
+          await fetch(`/api/sheets/${activeSheetId}/wallets/${targetWallet.walletId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ row_order: currentSortOrder }),
+          })
+        ),
       ])
 
-      await mutate()
+      await mutateHoldings()
     },
-    [mutate, walletSummaries]
+    [activeSheetId, mutateHoldings, walletSummaries]
+  )
+
+  const handleRemoveWalletFromSheet = useCallback(
+    async (walletId: string) => {
+      if (!activeSheetId || isMasterSheet) {
+        return
+      }
+
+      if (!window.confirm("Remove this wallet from the current launch sheet?")) {
+        return
+      }
+
+      await readApiResponse(
+        await fetch(`/api/sheets/${activeSheetId}/wallets/${walletId}`, {
+          method: "DELETE",
+        })
+      )
+
+      setSelectedWalletIds((current) => current.filter((id) => id !== walletId))
+      await Promise.all([mutateSheets(), mutateHoldings()])
+    },
+    [activeSheetId, isMasterSheet, mutateHoldings, mutateSheets]
+  )
+
+  const handleAddWallet = useCallback(
+    async (wallet: { address: string; label: string; type: "mine" | "external" }) => {
+      await readApiResponse(
+        await fetch("/api/wallets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(wallet),
+        })
+      )
+
+      await Promise.all([mutateWallets(), mutateSheets(), mutateHoldings()])
+    },
+    [mutateHoldings, mutateSheets, mutateWallets]
+  )
+
+  const handleAddWalletsBulk = useCallback(
+    async (
+      walletsToAdd: {
+        address: string
+        label: string
+        type: "mine" | "external"
+        lineNumber: number
+      }[]
+    ) => {
+      const result = await readApiResponse<{
+        insertedCount: number
+        failures?: { address: string; lineNumber: number | null; error: string }[]
+      }>(
+        await fetch("/api/wallets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wallets: walletsToAdd }),
+        })
+      )
+
+      await Promise.all([mutateWallets(), mutateSheets(), mutateHoldings()])
+      return result
+    },
+    [mutateHoldings, mutateSheets, mutateWallets]
+  )
+
+  const handleToggleWallet = useCallback((walletId: string, checked: boolean) => {
+    setSelectedWalletIds((current) => {
+      if (checked) {
+        return current.includes(walletId) ? current : [...current, walletId]
+      }
+
+      return current.filter((id) => id !== walletId)
+    })
+  }, [])
+
+  const handleToggleAllWallets = useCallback(
+    (checked: boolean) => {
+      if (checked) {
+        setSelectedWalletIds(
+          walletSummaries
+            .map((wallet) => wallet.walletId)
+            .filter((walletId): walletId is string => Boolean(walletId))
+        )
+      } else {
+        setSelectedWalletIds([])
+      }
+    },
+    [walletSummaries]
+  )
+
+  const handleDuplicateSheet = useCallback(
+    async (sheet: WorkbookSheetWithWalletCount) => {
+      const result = await readApiResponse<{ sheet: WorkbookSheetWithWalletCount }>(
+        await fetch(`/api/sheets/${sheet.id}/duplicate`, {
+          method: "POST",
+        })
+      )
+
+      await mutateSheets()
+      handleSelectSheet(result.sheet.id)
+    },
+    [handleSelectSheet, mutateSheets]
+  )
+
+  const handleArchiveSheet = useCallback(
+    async (sheet: WorkbookSheetWithWalletCount) => {
+      if (!window.confirm(`Archive "${sheet.name}"?`)) {
+        return
+      }
+
+      await readApiResponse(await fetch(`/api/sheets/${sheet.id}`, { method: "DELETE" }))
+      await mutateSheets()
+      if (activeSheetId === sheet.id) {
+        setSelectedWalletIds([])
+      }
+    },
+    [activeSheetId, mutateSheets]
+  )
+
+  const handleMoveSheet = useCallback(
+    async (sheet: WorkbookSheetWithWalletCount, direction: "left" | "right") => {
+      const currentIndex = sheets.findIndex((entry) => entry.id === sheet.id)
+      const targetIndex = direction === "left" ? currentIndex - 1 : currentIndex + 1
+
+      if (currentIndex === -1 || targetIndex < 1 || targetIndex >= sheets.length) {
+        return
+      }
+
+      const reordered = [...sheets]
+      ;[reordered[currentIndex], reordered[targetIndex]] = [
+        reordered[targetIndex],
+        reordered[currentIndex],
+      ]
+
+      await readApiResponse(
+        await fetch("/api/sheets/reorder", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sheetIds: reordered.map((entry) => entry.id),
+          }),
+        })
+      )
+
+      await mutateSheets()
+    },
+    [mutateSheets, sheets]
   )
 
   return (
     <div className="min-h-screen bg-background">
       <Navigation onRefresh={handleRefresh} isRefreshing={isLoading} />
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Wallet Manager</h1>
-            <p className="mt-1 text-muted-foreground">
-              {selectedTokenInfo
-                ? `Operational view for ${selectedTokenInfo.symbol}`
-                : "Track wallet ownership, operational fields, and launch snapshots"}
-            </p>
+      <main className="container mx-auto px-4 py-6">
+        <div className="mb-6 space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Wallet Workbook</h1>
+              <p className="mt-1 text-muted-foreground">
+                One master sheet, many launch sheets, and frozen historical tabs through snapshots.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {isMasterSheet && (
+                <AddWalletDialog
+                  existingAddresses={trackedWallets.map((wallet) => wallet.address)}
+                  onAdd={handleAddWallet}
+                  onAddBulk={handleAddWalletsBulk}
+                />
+              )}
+              <Button asChild variant="outline" size="sm">
+                <Link href="/snapshots">Snapshots</Link>
+              </Button>
+              <SaveSnapshotDialog
+                sheetId={activeSheetId}
+                sheetName={activeSheet?.name || null}
+                selectedTokenMint={selectedTokenMint}
+                selectedTokenSymbol={selectedTokenInfo?.symbol || activeSheet?.token_symbol || null}
+                onSaved={async () => {
+                  await mutateHoldings()
+                }}
+              />
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <AddWalletDialog
-              existingAddresses={trackedWallets.map((wallet) => wallet.address)}
-              onAdd={handleAddWallet}
-              onAddBulk={handleAddWalletsBulk}
-            />
-            <Button asChild variant="outline" size="sm">
-              <Link href="/snapshots">Snapshots</Link>
-            </Button>
-            <SaveSnapshotDialog
-              selectedTokenMint={selectedToken}
-              selectedTokenSymbol={selectedTokenInfo?.symbol || null}
-              onSaved={() => mutate()}
-            />
-          </div>
+
+          <WorkbookTabs
+            sheets={sheets}
+            activeSheetId={activeSheetId}
+            onSelect={handleSelectSheet}
+            onCreate={() => setCreateSheetOpen(true)}
+            onRename={(sheet) => {
+              setRenameTarget(sheet)
+              setRenameSheetOpen(true)
+            }}
+            onDuplicate={(sheet) => void handleDuplicateSheet(sheet)}
+            onArchive={(sheet) => void handleArchiveSheet(sheet)}
+            onMoveLeft={(sheet) => void handleMoveSheet(sheet, "left")}
+            onMoveRight={(sheet) => void handleMoveSheet(sheet, "right")}
+          />
         </div>
 
         {error && (
           <div className="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
             <p className="text-sm text-destructive">
-              {error.message || "Failed to load holdings."}
+              {error.message || "Failed to load the current sheet."}
             </p>
           </div>
         )}
 
         <div className="mb-6 rounded-lg border border-border bg-card p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                Selected Token
+              <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                Sheet Token Context
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                SOL and USDC are always loaded. Pick one tracked token to analyze amount and % of supply.
+                SOL and USDC always stay visible. The sheet token controls the amount and % supply columns.
               </p>
             </div>
+
+            {isMasterSheet && selectedWalletIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
+                  New Sheet from {selectedWalletIds.length}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={launchSheets.length === 0}
+                  onClick={() => setAddToSheetOpen(true)}
+                >
+                  Add to Existing Sheet
+                </Button>
+              </div>
+            )}
           </div>
+
           <TokenSelector
             tokens={trackedTokens}
-            selectedToken={selectedToken}
-            onSelectToken={setSelectedToken}
+            selectedToken={selectedTokenMint}
+            onSelectToken={(mint) => {
+              const token = trackedTokens.find((entry) => entry.mint === mint) || null
+              void handlePatchActiveSheet({
+                token_mint: mint,
+                token_symbol: token?.symbol || null,
+              })
+            }}
             onAddToken={handleAddToken}
             onDeleteToken={handleDeleteToken}
           />
@@ -318,7 +516,7 @@ function DashboardContent() {
               minimumFractionDigits: 2,
               maximumFractionDigits: 6,
             })}
-            subtitle="Across all tracked wallets"
+            subtitle={activeSheet ? activeSheet.name : "Current sheet"}
             icon={CircleDollarSign}
           />
           <StatsCard
@@ -327,7 +525,7 @@ function DashboardContent() {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}
-            subtitle="Built-in default token"
+            subtitle="Always loaded"
             icon={Coins}
           />
           <StatsCard
@@ -342,50 +540,89 @@ function DashboardContent() {
             }
             subtitle={
               selectedTokenInfo
-                ? "Accumulated across your wallets"
-                : "Select a token to analyze supply ownership"
+                ? "Accumulated inside this sheet"
+                : "Assign one token to this sheet"
             }
             icon={DatabaseZap}
           />
           <StatsCard
             title={selectedTokenInfo ? `${selectedTokenInfo.symbol} % Held` : "Selected Token % Held"}
-            value={
-              selectedTokenInfo
-                ? formatPercentValue(totalSelectedTokenSupplyPercent)
-                : "-"
-            }
-            subtitle={`${walletCount} wallet${walletCount !== 1 ? "s" : ""} tracked`}
+            value={selectedTokenInfo ? formatPercentValue(totalSelectedTokenSupplyPercent) : "-"}
+            subtitle={`${walletCount} wallet${walletCount !== 1 ? "s" : ""} in sheet`}
             icon={Percent}
           />
           <StatsCard
-            title="Tracked Wallets"
+            title="Wallets"
             value={walletCount.toString()}
-            subtitle={`${trackedTokenCount} tokens available`}
+            subtitle={isMasterSheet ? "Master source list" : "Launch sheet subset"}
             icon={Wallet}
           />
         </div>
 
-        <div className="mb-8 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">
-              {selectedTokenInfo
-                ? `${selectedTokenInfo.symbol} by Wallet`
-                : "Wallet Breakdown"}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Spreadsheet-style operations view focused on balances, funding, and supply ownership
-            </p>
+        <div className="space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">
+                {activeSheet?.name || "Current Sheet"}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {isMasterSheet
+                  ? "This is the permanent wallet database. Select rows here to build launch sheets."
+                  : "This launch sheet keeps its own row ordering and operational metadata."}
+              </p>
+            </div>
           </div>
+
           <WalletBreakdown
             wallets={walletSummaries}
-            selectedToken={selectedToken}
-            selectedTokenSymbol={selectedTokenInfo?.symbol}
+            selectedToken={selectedTokenMint}
+            selectedTokenSymbol={selectedTokenInfo?.symbol || activeSheet?.token_symbol || undefined}
             isLoading={isLoading}
-            onUpdateWallet={handleUpdateWallet}
+            emptyMessage={
+              isMasterSheet
+                ? "No wallets in the master sheet yet."
+                : "No wallets assigned to this launch sheet yet."
+            }
+            selectable={isMasterSheet}
+            selectedWalletIds={selectedWalletIds}
+            onToggleWallet={handleToggleWallet}
+            onToggleAllWallets={handleToggleAllWallets}
+            onUpdateWallet={handleUpdateSheetWallet}
             onMoveWallet={handleMoveWallet}
+            onRemoveWallet={!isMasterSheet ? handleRemoveWalletFromSheet : undefined}
           />
         </div>
       </main>
+
+      <CreateSheetDialog
+        open={createSheetOpen}
+        onOpenChange={setCreateSheetOpen}
+        tokens={trackedTokens}
+        selectedWalletIds={selectedWalletIds}
+        onCreated={async (sheet) => {
+          await mutateSheets()
+          handleSelectSheet(sheet.id)
+        }}
+      />
+
+      <RenameSheetDialog
+        sheet={renameTarget}
+        open={renameSheetOpen}
+        onOpenChange={setRenameSheetOpen}
+        onRenamed={async () => {
+          await mutateSheets()
+        }}
+      />
+
+      <AddWalletsToSheetDialog
+        open={addToSheetOpen}
+        onOpenChange={setAddToSheetOpen}
+        sheets={sheets}
+        walletIds={selectedWalletIds}
+        onAdded={async () => {
+          await Promise.all([mutateSheets(), mutateHoldings()])
+        }}
+      />
     </div>
   )
 }

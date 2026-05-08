@@ -47,6 +47,24 @@ export async function GET(request: Request) {
       )
     }
 
+    if (fromSnapshot.sheet_id !== toSnapshot.sheet_id) {
+      return NextResponse.json(
+        { error: "Snapshots must belong to the same sheet to be compared" },
+        { status: 400 }
+      )
+    }
+
+    if (
+      fromSnapshot.selected_token_mint &&
+      toSnapshot.selected_token_mint &&
+      fromSnapshot.selected_token_mint !== toSnapshot.selected_token_mint
+    ) {
+      return NextResponse.json(
+        { error: "Snapshots must use the same selected token to be compared" },
+        { status: 400 }
+      )
+    }
+
     return NextResponse.json(
       compareSnapshots(
         fromSnapshot,

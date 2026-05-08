@@ -7,6 +7,7 @@ import {
   normalizePlatform,
   normalizeTradeStatus,
 } from "@/lib/wallet-fields"
+import { getOrCreateMasterSheet } from "@/lib/sheets"
 
 function normalizeLabel(value: unknown) {
   if (typeof value !== "string") return null
@@ -122,6 +123,32 @@ export async function PATCH(
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    const masterSheet = await getOrCreateMasterSheet(supabase)
+    const masterUpdatePayload = {
+      ...(body.label !== undefined ? { label: normalizeLabel(body.label) } : {}),
+      ...(body.sort_order !== undefined
+        ? { row_order: normalizeSortOrder(body.sort_order) }
+        : {}),
+      ...(metadata.trade_status !== undefined
+        ? { trade_status: metadata.trade_status }
+        : {}),
+      ...(metadata.funding_source_label !== undefined
+        ? { funding_source_label: metadata.funding_source_label }
+        : {}),
+      ...(metadata.platform !== undefined ? { platform: metadata.platform } : {}),
+      ...(metadata.funded_at !== undefined
+        ? { funded_at: metadata.funded_at }
+        : {}),
+    }
+
+    if (Object.keys(masterUpdatePayload).length > 0) {
+      await supabase
+        .from("sheet_wallets")
+        .update(masterUpdatePayload)
+        .eq("sheet_id", masterSheet.id)
+        .eq("wallet_id", id)
     }
 
     return NextResponse.json(data)

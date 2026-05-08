@@ -19,12 +19,16 @@ import { readApiResponse } from "@/lib/http"
 import type { PortfolioSnapshot } from "@/lib/types"
 
 interface SaveSnapshotDialogProps {
+  sheetId?: string | null
+  sheetName?: string | null
   selectedTokenMint?: string | null
   selectedTokenSymbol?: string | null
   onSaved?: (snapshot: PortfolioSnapshot) => void | Promise<void>
 }
 
 export function SaveSnapshotDialog({
+  sheetId,
+  sheetName,
   selectedTokenMint,
   selectedTokenSymbol,
   onSaved,
@@ -40,6 +44,10 @@ export function SaveSnapshotDialog({
     setIsSaving(true)
 
     try {
+      if (!sheetId) {
+        throw new Error("Choose a sheet before saving a snapshot")
+      }
+
       const result = await readApiResponse<{
         snapshot: PortfolioSnapshot
         savedWallets: number
@@ -47,7 +55,7 @@ export function SaveSnapshotDialog({
         await fetch("/api/snapshots", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, selectedTokenMint }),
+          body: JSON.stringify({ name, sheetId, selectedTokenMint }),
         })
       )
 
@@ -81,6 +89,7 @@ export function SaveSnapshotDialog({
             <DialogTitle>Save Launch Snapshot</DialogTitle>
             <DialogDescription>
               Freeze the current wallet operations state
+              {sheetName ? ` in ${sheetName}` : ""}
               {selectedTokenSymbol ? ` for ${selectedTokenSymbol}` : ""} so you
               can compare token amounts and supply ownership later.
             </DialogDescription>

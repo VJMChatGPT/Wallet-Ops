@@ -11,101 +11,63 @@ import {
   SOLANA_USDC_MINT,
   WRAPPED_SOL_MINT,
 } from "@/lib/default-tokens"
-import { enrichWalletFundingMetadata } from "@/lib/funding-detection"
-import { sortWalletsByOrder } from "@/lib/wallet-order"
 import { getPumpFunBondingCurveBalance } from "@/lib/pumpfun"
+import { getMergedSheetWallets, getOrCreateMasterSheet, getSheetById } from "@/lib/sheets"
 import type {
   AggregatedTokenHolding,
   HoldingsResponseData,
   TokenHolding,
   TrackedToken,
-  TrackedWallet,
   WalletHoldingSummary,
+  WorkbookSheet,
 } from "@/lib/types"
 
 interface GetLiveHoldingsOptions {
-  walletType?: string | null
+  sheetId?: string | null
   tokenMint?: string | null
 }
 
 export async function getLiveHoldingsData(
-  supabase: {
-    from: (table: string) => {
-      select: (columns?: string) => {
-        eq: (column: string, value: string) => unknown
-      } & PromiseLike<unknown>
-    }
-  },
+  supabase: Awaited<ReturnType<typeof import("@/lib/supabase/server").createClient>>,
   options: GetLiveHoldingsOptions = {}
 ): Promise<HoldingsResponseData> {
-  const { walletType = null, tokenMint = null } = options
+  const { tokenMint = null } = options
+  let sheet: WorkbookSheet | null = null
 
-  let query = supabase.from("tracked_wallets").select("*")
-  if (walletType) {
-    query = query.eq("type", walletType)
+  if (options.sheetId) {
+    sheet = await getSheetById(supabase, options.sheetId)
+    if (!sheet) {
+      throw new Error("Sheet not found")
+    }
+  } else {
+    sheet = await getOrCreateMasterSheet(supabase)
   }
 
-  const [
-    { data: wallets, error: walletsError },
-    { data: trackedTokens, error: tokensError },
-  ] = await Promise.all([
-    query as Promise<{
-      data: {
-        id: string
-        address: string
-        label: string | null
-        type: "mine" | "external"
-        sort_order: number | null
-        trade_status: string | null
-        funding_source_label: string | null
-        funding_source_address: string | null
-        funding_label_source: string | null
-        first_funder_address: string | null
-        platform: string | null
-        funded_at: string | null
-        funding_detection_method: string | null
-        funding_detected_at: string | null
-        created_at: string
-      }[] | null
-      error: { message: string } | null
-    }>,
-    supabase.from("tracked_tokens").select("*") as Promise<{
-      data: TrackedToken[] | null
-      error: { message: string } | null
-    }>,
-  ])
-
-  if (walletsError) {
-    throw new Error(walletsError.message)
-  }
+  const { data: trackedTokens, error: tokensError } = await supabase
+    .from("tracked_tokens")
+    .select("*")
 
   if (tokensError) {
     throw new Error(tokensError.message)
   }
 
-  const fundingAwareWallets = await enrichWalletFundingMetadata(
-    supabase as Parameters<typeof enrichWalletFundingMetadata>[0],
-    (wallets || []) as TrackedWallet[]
-  )
-  const orderedWallets = sortWalletsByOrder(fundingAwareWallets)
-
   const effectiveTrackedTokens = mergeTrackedTokensWithDefaults(
     (trackedTokens || []) as TrackedToken[]
   )
-  const trackedTokenMints = new Set(
-    effectiveTrackedTokens.map((token) => token.mint)
+  const trackedTokenByMint = new Map(
+    effectiveTrackedTokens.map((trackedToken) => [trackedToken.mint, trackedToken])
   )
-  const requestedTokenIsTracked = tokenMint ? trackedTokenMints.has(tokenMint) : true
-  const allowedMints = tokenMint && requestedTokenIsTracked
-    ? new Set([SOLANA_USDC_MINT, tokenMint])
-    : trackedTokenMints
-  const selectedTrackedToken =
-    tokenMint && requestedTokenIsTracked
-      ? effectiveTrackedTokens.find((token) => token.mint === tokenMint) || null
-      : null
 
-  if (orderedWallets.length === 0) {
+  const selectedTokenMint = tokenMint || sheet.token_mint || null
+  const selectedTrackedToken = selectedTokenMint
+    ? trackedTokenByMint.get(selectedTokenMint) || null
+    : null
+
+  const wallets = await getMergedSheetWallets(supabase, sheet)
+
+  if (wallets.length === 0) {
     return {
+      sheet,
       holdings: [],
       aggregated: [],
       walletSummaries: [],
@@ -116,29 +78,35 @@ export async function getLiveHoldingsData(
       totalUsdcBalance: 0,
       totalSelectedTokenBalance: 0,
       totalSelectedTokenSupplyPercent: null,
-      selectedTokenMint: selectedTrackedToken?.mint || null,
-      selectedTokenSymbol: selectedTrackedToken?.symbol || null,
+      selectedTokenMint,
+      selectedTokenSymbol: selectedTrackedToken?.symbol || sheet.token_symbol || null,
     }
   }
 
-  const effectiveAllowedMints = requestedTokenIsTracked
-    ? allowedMints
-    : new Set<string>([SOLANA_USDC_MINT])
-  const allHoldings: TokenHolding[] = []
+  const allowedMints = new Set<string>([SOLANA_USDC_MINT])
+  if (selectedTokenMint) {
+    allowedMints.add(selectedTokenMint)
+  }
 
+  const allHoldings: TokenHolding[] = []
   const walletBalances = await Promise.all(
-    orderedWallets.map(async (wallet) => {
+    wallets.map(async (wallet) => {
       const [assets, solBalance] = await Promise.all([
         getWalletTokenBalances(wallet.address),
         getWalletSolBalance(wallet.address),
       ])
-      return { wallet, assets, solBalance }
+
+      return {
+        wallet,
+        assets,
+        solBalance,
+      }
     })
   )
 
   const dexData = await getTokensFromDexScreener([
     WRAPPED_SOL_MINT,
-    ...Array.from(effectiveAllowedMints),
+    ...Array.from(allowedMints),
   ])
   const solBestPair = getBestPair(dexData.get(WRAPPED_SOL_MINT) || null)
   const solPriceUsd = solBestPair ? parseFloat(solBestPair.priceUsd) : 0
@@ -146,19 +114,18 @@ export async function getLiveHoldingsData(
   for (const { wallet, assets } of walletBalances) {
     for (const asset of assets) {
       const mint = getAssetMint(asset)
-      if (!effectiveAllowedMints.has(mint)) {
+      if (!allowedMints.has(mint)) {
         continue
       }
 
       const pairs = dexData.get(mint)
       const bestPair = getBestPair(pairs || null)
-      const decimals = asset.token_info?.decimals || 9
+      const defaultToken = trackedTokenByMint.get(mint)
+      const decimals = asset.token_info?.decimals || defaultToken?.decimals || 9
       const rawBalance = asset.token_info?.balance || 0
-      const balanceFormatted = formatTokenBalance(rawBalance, decimals)
-      const defaultToken = effectiveTrackedTokens.find((token) => token.mint === mint)
+      const actualBalance = rawBalance / Math.pow(10, decimals)
       const isUsdc = mint === SOLANA_USDC_MINT
       const priceUsd = bestPair ? parseFloat(bestPair.priceUsd) : isUsdc ? 1 : null
-      const actualBalance = rawBalance / Math.pow(10, decimals)
       const valueUsd = priceUsd !== null ? actualBalance * priceUsd : null
       const totalSupply = asset.token_info?.supply || 0
 
@@ -168,7 +135,7 @@ export async function getLiveHoldingsData(
         symbol: asset.content?.metadata?.symbol || defaultToken?.symbol || "???",
         decimals,
         balance: rawBalance,
-        balanceFormatted,
+        balanceFormatted: formatTokenBalance(rawBalance, decimals),
         priceUsd,
         valueUsd,
         marketCap: bestPair?.marketCap || bestPair?.fdv || null,
@@ -267,23 +234,21 @@ export async function getLiveHoldingsData(
           ? formatTokenBalance(othersBalance, token.decimals)
           : null
       token.holdingsPercentExcludingBondingCurve =
-        circulatingSupply > 0
-          ? (token.totalBalance / circulatingSupply) * 100
-          : null
+        circulatingSupply > 0 ? (token.totalBalance / circulatingSupply) * 100 : null
       token.othersPercentExcludingBondingCurve =
         circulatingSupply > 0 ? (othersBalance / circulatingSupply) * 100 : null
     })
   )
 
-  const aggregated = Array.from(aggregatedMap.values()).sort((a, b) => {
-    const valueA = a.totalValueUsd || 0
-    const valueB = b.totalValueUsd || 0
-    return valueB - valueA
+  const aggregated = Array.from(aggregatedMap.values()).sort((left, right) => {
+    const leftValue = left.totalValueUsd || 0
+    const rightValue = right.totalValueUsd || 0
+    return rightValue - leftValue
   })
-  const selectedAggregatedHolding =
-    tokenMint && requestedTokenIsTracked
-      ? aggregated.find((token) => token.mint === tokenMint) || null
-      : null
+
+  const selectedAggregatedHolding = selectedTokenMint
+    ? aggregated.find((token) => token.mint === selectedTokenMint) || null
+    : null
 
   const walletSummaries: WalletHoldingSummary[] = walletBalances.map(
     ({ wallet, solBalance }) => {
@@ -302,20 +267,17 @@ export async function getLiveHoldingsData(
               : null,
         }))
 
-      const usdcHolding = holdings.find(
-        (holding) => holding.mint === SOLANA_USDC_MINT
-      )
-      const selectedHoldingFull =
-        tokenMint && requestedTokenIsTracked
-          ? allHoldings.find(
-              (holding) =>
-                holding.walletAddress === wallet.address && holding.mint === tokenMint
-            ) || null
-          : null
-      const selectedHolding =
-        tokenMint && requestedTokenIsTracked
-          ? holdings.find((holding) => holding.mint === tokenMint) || null
-          : null
+      const usdcHolding = holdings.find((holding) => holding.mint === SOLANA_USDC_MINT)
+      const selectedHoldingFull = selectedTokenMint
+        ? allHoldings.find(
+            (holding) =>
+              holding.walletAddress === wallet.address &&
+              holding.mint === selectedTokenMint
+          ) || null
+        : null
+      const selectedHolding = selectedTokenMint
+        ? holdings.find((holding) => holding.mint === selectedTokenMint) || null
+        : null
       const solUsdValue = (solBalance?.sol || 0) * solPriceUsd
       const trackedValueUsd = holdings.reduce(
         (sum, holding) => sum + (holding.valueUsd || 0),
@@ -323,11 +285,13 @@ export async function getLiveHoldingsData(
       )
 
       return {
-        walletId: wallet.id,
+        sheetId: wallet.sheetId,
+        sheetType: sheet.type,
+        walletId: wallet.walletId,
         walletAddress: wallet.address,
         walletLabel: wallet.label,
         walletType: wallet.type,
-        sortOrder: wallet.sort_order,
+        sortOrder: wallet.row_order,
         tradeStatus: wallet.trade_status,
         fundingSourceLabel: wallet.funding_source_label,
         fundingSourceAddress: wallet.funding_source_address,
@@ -344,9 +308,8 @@ export async function getLiveHoldingsData(
         usdcUsdValue: usdcHolding?.valueUsd || 0,
         trackedValueUsd,
         totalWalletValueUsd: solUsdValue + trackedValueUsd,
-        selectedTokenMint: selectedAggregatedHolding?.mint || null,
-        selectedTokenSymbol:
-          selectedAggregatedHolding?.symbol || selectedTrackedToken?.symbol || null,
+        selectedTokenMint,
+        selectedTokenSymbol: selectedAggregatedHolding?.symbol || sheet.token_symbol || null,
         selectedTokenBalance: selectedHoldingFull
           ? selectedHoldingFull.balance / Math.pow(10, selectedHoldingFull.decimals)
           : 0,
@@ -366,7 +329,8 @@ export async function getLiveHoldingsData(
     0
   )
   const totalSelectedTokenBalance = selectedAggregatedHolding
-    ? selectedAggregatedHolding.totalBalance / Math.pow(10, selectedAggregatedHolding.decimals)
+    ? selectedAggregatedHolding.totalBalance /
+      Math.pow(10, selectedAggregatedHolding.decimals)
     : 0
   const totalSelectedTokenSupplyPercent =
     selectedAggregatedHolding?.holdingsPercent ?? null
@@ -376,18 +340,19 @@ export async function getLiveHoldingsData(
   )
 
   return {
+    sheet,
     holdings: allHoldings,
     aggregated,
     walletSummaries,
     totalValueUsd: portfolioTotalValueUsd,
-    walletCount: orderedWallets.length,
+    walletCount: walletSummaries.length,
     trackedTokenCount: effectiveTrackedTokens.length,
     totalSolBalance,
     totalUsdcBalance,
     totalSelectedTokenBalance,
     totalSelectedTokenSupplyPercent,
-    selectedTokenMint: selectedAggregatedHolding?.mint || selectedTrackedToken?.mint || null,
+    selectedTokenMint,
     selectedTokenSymbol:
-      selectedAggregatedHolding?.symbol || selectedTrackedToken?.symbol || null,
+      selectedAggregatedHolding?.symbol || selectedTrackedToken?.symbol || sheet.token_symbol || null,
   }
 }
