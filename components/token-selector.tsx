@@ -90,6 +90,11 @@ export function TokenSelector({
                       <Badge variant="secondary" className="font-mono text-xs">
                         {token.symbol}
                       </Badge>
+                      {token.isDefault && (
+                        <Badge variant="outline" className="text-[10px]">
+                          DEFAULT
+                        </Badge>
+                      )}
                       <span className="truncate max-w-[200px]">{token.name}</span>
                     </div>
                   </div>
@@ -139,6 +144,11 @@ export function TokenSelector({
                   <Badge variant="secondary" className="font-mono text-xs">
                     {token.symbol}
                   </Badge>
+                  {token.isDefault && (
+                    <Badge variant="outline" className="text-[10px]">
+                      DEFAULT
+                    </Badge>
+                  )}
                   <span className="truncate max-w-[120px]">{token.name}</span>
                 </button>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -163,15 +173,17 @@ export function TokenSelector({
                   >
                     <ExternalLink className="h-3 w-3" />
                   </a>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-destructive hover:text-destructive"
-                    onClick={(e) => handleDelete(token.mint, e)}
-                    disabled={deletingMint === token.mint}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                  {!token.isDefault && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-destructive hover:text-destructive"
+                      onClick={(e) => handleDelete(token.mint, e)}
+                      disabled={deletingMint === token.mint}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}

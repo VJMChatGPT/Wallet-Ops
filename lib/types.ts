@@ -4,6 +4,10 @@ export interface TrackedWallet {
   address: string
   label: string | null
   type: "mine" | "external"
+  trade_status: string | null
+  funding_cex: string | null
+  platform: string | null
+  planned_date: string | null
   created_at: string
 }
 
@@ -14,6 +18,7 @@ export interface TrackedToken {
   symbol: string
   decimals: number
   created_at: string
+  isDefault?: boolean
 }
 
 export interface TokenSnapshot {
@@ -162,12 +167,26 @@ export interface AggregatedTokenHolding {
 }
 
 export interface WalletHoldingSummary {
+  walletId: string | null
   walletAddress: string
   walletLabel: string | null
   walletType: "mine" | "external"
+  tradeStatus: string | null
+  fundingCex: string | null
+  platform: string | null
+  plannedDate: string | null
   solBalance: number | null
   solLamports: number | null
+  solUsdValue: number
+  usdcBalance: number
+  usdcUsdValue: number
   trackedValueUsd: number
+  totalWalletValueUsd: number
+  selectedTokenMint: string | null
+  selectedTokenSymbol: string | null
+  selectedTokenBalance: number
+  selectedTokenBalanceFormatted: string
+  selectedTokenSupplyPercent: number | null
   holdings: {
     mint: string
     symbol: string
@@ -177,4 +196,105 @@ export interface WalletHoldingSummary {
     valueUsd: number | null
     holdingsPercent: number | null
   }[]
+}
+
+export interface TokenWatchAlert {
+  signature: string
+  buyerAddress: string
+  amount: number | null
+  timestamp: number
+  source: string | null
+  marketAddress: string
+  description: string
+}
+
+export interface HoldingsResponseData {
+  holdings: TokenHolding[]
+  aggregated: AggregatedTokenHolding[]
+  walletSummaries: WalletHoldingSummary[]
+  totalValueUsd: number
+  walletCount: number
+  trackedTokenCount: number
+  totalSolBalance: number
+  totalUsdcBalance: number
+  totalSelectedTokenBalance: number
+  totalSelectedTokenSupplyPercent: number | null
+  selectedTokenMint: string | null
+  selectedTokenSymbol: string | null
+}
+
+export interface PortfolioSnapshot {
+  id: string
+  name: string | null
+  total_portfolio_usd: number | string
+  wallet_count: number
+  selected_token_mint: string | null
+  selected_token_symbol: string | null
+  total_sol_balance: number | string | null
+  total_usdc_balance: number | string | null
+  total_selected_token_balance: number | string | null
+  total_selected_token_supply_percent: number | string | null
+  created_at: string
+}
+
+export interface PortfolioSnapshotWallet {
+  id: string
+  snapshot_id: string
+  wallet_id: string | null
+  wallet_label: string | null
+  wallet_address: string
+  wallet_type: "mine" | "external" | null
+  trade_status: string | null
+  funding_cex: string | null
+  platform: string | null
+  planned_date: string | null
+  sol_balance: number | string | null
+  usdc_balance: number | string | null
+  sol_usd_value: number | string | null
+  tracked_tokens_usd_value: number | string | null
+  total_wallet_usd_value: number | string | null
+  selected_token_mint: string | null
+  selected_token_symbol: string | null
+  selected_token_balance: number | string | null
+  selected_token_supply_percent: number | string | null
+  token_breakdown: WalletHoldingSummary["holdings"] | null
+  created_at: string
+}
+
+export interface PortfolioSnapshotDetail {
+  snapshot: PortfolioSnapshot
+  wallets: PortfolioSnapshotWallet[]
+}
+
+export interface SnapshotWalletComparisonRow {
+  walletAddress: string
+  walletLabel: string | null
+  walletType: string | null
+  startTokenAmount: number
+  startTokenSupplyPercent: number | null
+  endTokenAmount: number
+  endTokenSupplyPercent: number | null
+  deltaTokenAmount: number
+  deltaTokenSupplyPercent: number | null
+  startPresent: boolean
+  endPresent: boolean
+}
+
+export interface SnapshotComparisonResponse {
+  from: PortfolioSnapshot
+  to: PortfolioSnapshot
+  startSolBalance: number
+  endSolBalance: number
+  deltaSolBalance: number
+  deltaSolPercent: number | null
+  selectedTokenMint: string | null
+  selectedTokenSymbol: string | null
+  startTokenAmount: number
+  endTokenAmount: number
+  deltaTokenAmount: number
+  startTokenSupplyPercent: number | null
+  endTokenSupplyPercent: number | null
+  deltaTokenSupplyPercent: number | null
+  tokenMismatch: boolean
+  wallets: SnapshotWalletComparisonRow[]
 }

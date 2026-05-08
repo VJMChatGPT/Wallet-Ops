@@ -1,6 +1,10 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { getTokenFromDexScreener, getBestPair } from "@/lib/api"
+import {
+  mergeTrackedTokensWithDefaults,
+  SOLANA_USDC_MINT,
+} from "@/lib/default-tokens"
 
 export const dynamic = "force-dynamic"
 
@@ -25,7 +29,9 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ tokens: tokens || [] })
+    return NextResponse.json({
+      tokens: mergeTrackedTokensWithDefaults(tokens || []),
+    })
   } catch (error) {
     return errorResponse(error, "Failed to load tokens")
   }
@@ -50,6 +56,13 @@ export async function POST(request: Request) {
     }
 
     const cleanMint = mint.trim()
+
+    if (cleanMint === SOLANA_USDC_MINT) {
+      return NextResponse.json(
+        { error: "USDC is already tracked by default" },
+        { status: 409 }
+      )
+    }
 
     // Check if token already exists
     const { data: existing } = await supabase
@@ -107,6 +120,13 @@ export async function DELETE(request: Request) {
 
     if (!mint) {
       return NextResponse.json({ error: "Mint address is required" }, { status: 400 })
+    }
+
+    if (mint === SOLANA_USDC_MINT) {
+      return NextResponse.json(
+        { error: "USDC is a built-in token and cannot be removed" },
+        { status: 400 }
+      )
     }
 
     const { error } = await supabase

@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Wallet, RefreshCw, Coins } from "lucide-react"
+import { LayoutDashboard, Wallet, RefreshCw, Coins, Camera } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface NavigationProps {
@@ -18,6 +18,7 @@ export function Navigation({ onRefresh, isRefreshing }: NavigationProps) {
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/wallets", label: "Wallets", icon: Wallet },
     { href: "/tokens", label: "Tokens", icon: Coins },
+    { href: "/snapshots", label: "Snapshots", icon: Camera },
   ]
 
   return (

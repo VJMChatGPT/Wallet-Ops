@@ -8,6 +8,7 @@ import type {
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY
 const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
 const LAMPORTS_PER_SOL = 1_000_000_000
+const DEFAULT_LOCALE = "en-US"
 
 // Fetch token balances for a wallet using Helius DAS API
 export async function getWalletTokenBalances(
@@ -218,6 +219,13 @@ export function formatUsd(value: number | null): string {
     return `$${value.toFixed(4)}`
   }
   return `$${value.toPrecision(4)}`
+}
+
+export function formatNumber(
+  value: number,
+  options?: Intl.NumberFormatOptions
+): string {
+  return new Intl.NumberFormat(DEFAULT_LOCALE, options).format(value)
 }
 
 // Format percentage

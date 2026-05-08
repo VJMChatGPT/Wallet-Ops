@@ -6,14 +6,23 @@ import { Button } from "@/components/ui/button"
 import { Copy, ExternalLink, Trash2 } from "lucide-react"
 import type { TrackedWallet } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { EditWalletDialog } from "@/components/edit-wallet-dialog"
 
 interface WalletCardProps {
   wallet: TrackedWallet
+  existingAddresses?: string[]
+  onUpdate?: (wallet: { id: string; address: string; label: string }) => Promise<void>
   onDelete?: (id: string) => void
   isDeleting?: boolean
 }
 
-export function WalletCard({ wallet, onDelete, isDeleting }: WalletCardProps) {
+export function WalletCard({
+  wallet,
+  existingAddresses = [],
+  onUpdate,
+  onDelete,
+  isDeleting,
+}: WalletCardProps) {
   const copyAddress = () => {
     navigator.clipboard.writeText(wallet.address)
   }
@@ -40,15 +49,26 @@ export function WalletCard({ wallet, onDelete, isDeleting }: WalletCardProps) {
               {wallet.type === "mine" ? "My Wallet" : "External"}
             </Badge>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-            onClick={() => onDelete?.(wallet.id)}
-            disabled={isDeleting}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {onUpdate && (
+              <EditWalletDialog
+                wallet={wallet}
+                existingAddresses={existingAddresses.filter(
+                  (address) => address !== wallet.address
+                )}
+                onSave={onUpdate}
+              />
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              onClick={() => onDelete?.(wallet.id)}
+              disabled={isDeleting}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>

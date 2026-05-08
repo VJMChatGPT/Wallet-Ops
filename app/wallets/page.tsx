@@ -8,13 +8,42 @@ import { AddWalletDialog } from "@/components/add-wallet-dialog"
 import type { TrackedWallet } from "@/lib/types"
 import { Wallet } from "lucide-react"
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
+async function readApiResponse(res: Response) {
+  const text = await res.text()
+  let data: unknown = null
+
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = null
+    }
+  }
+
+  if (!res.ok) {
+    const message =
+      typeof data === "object" &&
+      data !== null &&
+      "error" in data &&
+      typeof data.error === "string"
+        ? data.error
+        : `Request failed with status ${res.status}`
+
+    throw new Error(message)
+  }
+
+  return data
+}
+
+const fetcher = async (url: string) =>
+  (await readApiResponse(await fetch(url))) as TrackedWallet[]
 
 export default function WalletsPage() {
   const { data: wallets, error, isLoading, mutate } = useSWR<TrackedWallet[]>(
     "/api/wallets",
     fetcher
   )
+  const walletList = Array.isArray(wallets) ? wallets : []
 
   const handleRefresh = useCallback(() => {
     mutate()
@@ -31,12 +60,32 @@ export default function WalletsPage() {
       body: JSON.stringify(wallet),
     })
 
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || "Failed to add wallet")
+    await readApiResponse(response)
+
+    mutate()
+  }
+
+  const handleAddWalletsBulk = async (
+    walletsToAdd: {
+      address: string
+      label: string
+      type: "mine" | "external"
+      lineNumber: number
+    }[]
+  ) => {
+    const response = await fetch("/api/wallets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallets: walletsToAdd }),
+    })
+
+    const data = (await readApiResponse(response)) as {
+      insertedCount: number
+      failures?: { address: string; lineNumber: number | null; error: string }[]
     }
 
     mutate()
+    return data
   }
 
   const handleDeleteWallet = async (id: string) => {
@@ -52,8 +101,23 @@ export default function WalletsPage() {
     mutate()
   }
 
-  const myWallets = wallets?.filter((w) => w.type === "mine") || []
-  const externalWallets = wallets?.filter((w) => w.type === "external") || []
+  const handleUpdateWallet = async (wallet: {
+    id: string
+    address: string
+    label: string
+  }) => {
+    const response = await fetch("/api/wallets", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(wallet),
+    })
+
+    await readApiResponse(response)
+    mutate()
+  }
+
+  const myWallets = walletList.filter((w) => w.type === "mine")
+  const externalWallets = walletList.filter((w) => w.type === "external")
 
   return (
     <div className="min-h-screen bg-background">
@@ -67,12 +131,18 @@ export default function WalletsPage() {
               Manage your tracked Solana wallets
             </p>
           </div>
-          <AddWalletDialog onAdd={handleAddWallet} />
+          <AddWalletDialog
+            existingAddresses={walletList.map((wallet) => wallet.address)}
+            onAdd={handleAddWallet}
+            onAddBulk={handleAddWalletsBulk}
+          />
         </div>
 
         {error && (
           <div className="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
-            <p className="text-sm text-destructive">Failed to load wallets.</p>
+            <p className="text-sm text-destructive">
+              {error.message || "Failed to load wallets."}
+            </p>
           </div>
         )}
 
@@ -80,7 +150,7 @@ export default function WalletsPage() {
           <div className="flex items-center justify-center py-16">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
-        ) : wallets?.length === 0 ? (
+        ) : walletList.length === 0 ? (
           <div className="rounded-lg border border-border bg-card p-12 text-center">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
               <Wallet className="h-6 w-6 text-muted-foreground" />
@@ -100,6 +170,8 @@ export default function WalletsPage() {
                     <WalletCard
                       key={wallet.id}
                       wallet={wallet}
+                      existingAddresses={walletList.map((entry) => entry.address)}
+                      onUpdate={handleUpdateWallet}
                       onDelete={handleDeleteWallet}
                     />
                   ))}
@@ -115,6 +187,8 @@ export default function WalletsPage() {
                     <WalletCard
                       key={wallet.id}
                       wallet={wallet}
+                      existingAddresses={walletList.map((entry) => entry.address)}
+                      onUpdate={handleUpdateWallet}
                       onDelete={handleDeleteWallet}
                     />
                   ))}

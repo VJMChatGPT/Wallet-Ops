@@ -1,54 +1,31 @@
 "use client"
 
 import { useCallback, useState, useEffect, Suspense } from "react"
+import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
 import { Navigation } from "@/components/navigation"
 import { StatsCard } from "@/components/stats-card"
-import { TokenTable } from "@/components/token-table"
 import { TokenSelector } from "@/components/token-selector"
 import { WalletBreakdown } from "@/components/wallet-breakdown"
 import { SupplyDistributionChart } from "@/components/supply-distribution-chart"
-import { DollarSign, Coins, Wallet, TrendingUp } from "lucide-react"
-import { formatUsd } from "@/lib/api"
+import { TokenWatchCard } from "@/components/token-watch-card"
+import { SaveSnapshotDialog } from "@/components/save-snapshot-dialog"
+import { Button } from "@/components/ui/button"
+import { Coins, Percent, Wallet, DatabaseZap, CircleDollarSign } from "lucide-react"
+import { formatNumber } from "@/lib/api"
+import { jsonFetcher, readApiResponse } from "@/lib/http"
 import type {
-  AggregatedTokenHolding,
+  HoldingsResponseData,
   TrackedToken,
-  WalletHoldingSummary,
 } from "@/lib/types"
 
-interface HoldingsResponse {
-  holdings: unknown[]
-  aggregated: AggregatedTokenHolding[]
-  walletSummaries: WalletHoldingSummary[]
-  totalValueUsd: number
-  walletCount: number
-  trackedTokenCount: number
+function formatPercentValue(value: number | null | undefined, digits = 4) {
+  return typeof value === "number" ? `${value.toFixed(digits)}%` : "-"
 }
 
 interface TokensResponse {
   tokens: TrackedToken[]
-}
-
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
-
-async function readApiResponse(res: Response) {
-  const text = await res.text()
-  let data: { error?: string } | null = null
-
-  if (text) {
-    try {
-      data = JSON.parse(text)
-    } catch {
-      data = null
-    }
-  }
-
-  if (!res.ok) {
-    throw new Error(data?.error || `Request failed with status ${res.status}`)
-  }
-
-  return data
 }
 
 // Wrapper component to handle Suspense for useSearchParams
@@ -94,7 +71,7 @@ function DashboardContent() {
   // Fetch tracked tokens
   const { data: tokensData, mutate: mutateTokens } = useSWR<TokensResponse>(
     "/api/tokens",
-    fetcher
+    jsonFetcher
   )
 
   // Fetch holdings (optionally filtered by token)
@@ -102,11 +79,11 @@ function DashboardContent() {
     ? `/api/holdings?token=${selectedToken}`
     : "/api/holdings"
 
-  const { data, error, isLoading, mutate } = useSWR<HoldingsResponse>(
+  const { data, error, isLoading, mutate } = useSWR<HoldingsResponseData>(
     holdingsUrl,
-    fetcher,
+    jsonFetcher,
     {
-      refreshInterval: 60000,
+      refreshInterval: 15000,
       revalidateOnFocus: false,
     }
   )
@@ -145,59 +122,76 @@ function DashboardContent() {
     [mutateTokens, selectedToken]
   )
 
-  const totalValue = data?.totalValueUsd || 0
-  const tokenCount = data?.aggregated?.length || 0
+  const handleUpdateWallet = useCallback(
+    async (
+      walletId: string,
+      patch: {
+        trade_status?: string | null
+        funding_cex?: string | null
+        platform?: string | null
+        planned_date?: string | null
+      }
+    ) => {
+      const response = await fetch(`/api/wallets/${walletId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      })
+
+      await readApiResponse(response)
+      await mutate()
+    },
+    [mutate]
+  )
+
   const walletCount = data?.walletCount || 0
   const trackedTokens = tokensData?.tokens || []
   const trackedTokenCount = data?.trackedTokenCount ?? trackedTokens.length
   const walletSummaries = data?.walletSummaries || []
+  const totalSol = data?.totalSolBalance || 0
+  const totalUsdc = data?.totalUsdcBalance || 0
+  const totalSelectedTokenBalance = data?.totalSelectedTokenBalance || 0
+  const totalSelectedTokenSupplyPercent = data?.totalSelectedTokenSupplyPercent
 
   // Get selected token info for display
   const selectedTokenInfo = selectedToken
     ? trackedTokens.find((t) => t.mint === selectedToken)
     : null
 
-  const emptyHoldingsMessage =
-    trackedTokenCount === 0
-      ? "No tracked tokens yet. Add a token above to start monitoring holdings."
-      : walletCount === 0
-      ? "No wallets tracked yet. Add a wallet to start monitoring your tracked tokens."
-      : selectedTokenInfo
-      ? `No holdings found for ${selectedTokenInfo.symbol} in your tracked wallets.`
-      : "No holdings found for your tracked tokens in your tracked wallets."
   const selectedAggregatedHolding = selectedToken
     ? data?.aggregated?.find((token) => token.mint === selectedToken)
     : undefined
-
-  // Calculate average 24h change weighted by value
-  const weightedChange =
-    data?.aggregated && data.aggregated.length > 0 && totalValue > 0
-      ? data.aggregated.reduce((acc, token) => {
-          if (token.priceChange24h !== null && token.totalValueUsd !== null) {
-            return acc + token.priceChange24h * (token.totalValueUsd / totalValue)
-          }
-          return acc
-        }, 0)
-      : null
 
   return (
     <div className="min-h-screen bg-background">
       <Navigation onRefresh={handleRefresh} isRefreshing={isLoading} />
 
       <main className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-muted-foreground">
-            {selectedTokenInfo
-              ? `Viewing holdings for ${selectedTokenInfo.symbol}`
-              : "Track your Solana token holdings across all wallets"}
-          </p>
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+            <p className="mt-1 text-muted-foreground">
+              {selectedTokenInfo
+                ? `Viewing holdings for ${selectedTokenInfo.symbol}`
+                : "Track your Solana token holdings across all wallets"}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/snapshots">Snapshots</Link>
+            </Button>
+            <SaveSnapshotDialog
+              selectedTokenMint={selectedToken}
+              selectedTokenSymbol={selectedTokenInfo?.symbol || null}
+              onSaved={() => mutate()}
+            />
+          </div>
         </div>
 
         {error && (
           <div className="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
             <p className="text-sm text-destructive">
-              Failed to load holdings. Please check your Helius API key.
+              {error.message || "Failed to load holdings."}
             </p>
           </div>
         )}
@@ -216,44 +210,67 @@ function DashboardContent() {
           />
         </div>
 
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <StatsCard
-            title={selectedTokenInfo ? `${selectedTokenInfo.symbol} Value` : "Total Portfolio Value"}
-            value={formatUsd(totalValue)}
-            icon={DollarSign}
-            trend={
-              weightedChange !== null
-                ? { value: weightedChange, label: "24h" }
-                : undefined
-            }
+            title="Total SOL"
+            value={formatNumber(totalSol, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 6,
+            })}
+            subtitle="Across all tracked wallets"
+            icon={CircleDollarSign}
           />
           <StatsCard
-            title="Unique Tokens"
-            value={tokenCount.toString()}
-            subtitle={selectedToken ? "Filtered tracked token" : "With tracked holdings"}
+            title="Total USDC"
+            value={formatNumber(totalUsdc, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+            subtitle="Built-in default token"
             icon={Coins}
+          />
+          <StatsCard
+            title={selectedTokenInfo ? `${selectedTokenInfo.symbol} Amount` : "Selected Token Amount"}
+            value={
+              selectedTokenInfo
+                ? formatNumber(totalSelectedTokenBalance, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 6,
+                  })
+                : "-"
+            }
+            subtitle={
+              selectedTokenInfo
+                ? "Accumulated across your wallets"
+                : "Select a token to analyze supply ownership"
+            }
+            icon={DatabaseZap}
+          />
+          <StatsCard
+            title={selectedTokenInfo ? `${selectedTokenInfo.symbol} % Held` : "Selected Token % Held"}
+            value={
+              selectedTokenInfo
+                ? formatPercentValue(totalSelectedTokenSupplyPercent)
+                : "-"
+            }
+            subtitle={`${walletCount} wallet${walletCount !== 1 ? "s" : ""} tracked`}
+            icon={Percent}
           />
           <StatsCard
             title="Tracked Wallets"
             value={walletCount.toString()}
-            subtitle="Active wallets"
+            subtitle={`${trackedTokenCount} tokens available`}
             icon={Wallet}
-          />
-          <StatsCard
-            title="24h Change"
-            value={
-              weightedChange !== null
-                ? `${weightedChange >= 0 ? "+" : ""}${weightedChange.toFixed(2)}%`
-                : "-"
-            }
-            subtitle="Portfolio weighted"
-            icon={TrendingUp}
           />
         </div>
 
         {selectedTokenInfo && selectedAggregatedHolding && (
-          <div className="mb-8">
+          <div className="mb-8 grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
             <SupplyDistributionChart token={selectedAggregatedHolding} />
+            <TokenWatchCard
+              mint={selectedTokenInfo.mint}
+              symbol={selectedTokenInfo.symbol}
+            />
           </div>
         )}
 
@@ -265,31 +282,15 @@ function DashboardContent() {
                 : "Wallet Breakdown"}
             </h2>
             <p className="text-sm text-muted-foreground">
-              SOL balance plus tracked token holdings
+              Amounts first: SOL, USDC, selected token balance, and supply ownership
             </p>
           </div>
           <WalletBreakdown
             wallets={walletSummaries}
             selectedToken={selectedToken}
             selectedTokenSymbol={selectedTokenInfo?.symbol}
-            selectedTokenHolding={selectedAggregatedHolding}
             isLoading={isLoading}
-          />
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">
-              {selectedTokenInfo ? `${selectedTokenInfo.symbol} Holdings` : "Holdings"}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {tokenCount} token{tokenCount !== 1 ? "s" : ""} found
-            </p>
-          </div>
-          <TokenTable
-            tokens={data?.aggregated || []}
-            isLoading={isLoading}
-            emptyMessage={emptyHoldingsMessage}
+            onUpdateWallet={handleUpdateWallet}
           />
         </div>
       </main>
