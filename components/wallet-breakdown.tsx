@@ -1,7 +1,26 @@
 "use client"
 
-import { useEffect, useState } from "react"
-
+import { useCallback, useMemo, useState } from "react"
+import {
+  closestCenter,
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -10,29 +29,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import { SolscanLink } from "@/components/solscan-link"
-import { cn } from "@/lib/utils"
 import { formatNumber } from "@/lib/api"
 import type { WalletHoldingSummary } from "@/lib/types"
-import { ChevronDown, ChevronUp, X } from "lucide-react"
-import {
-  formatFundedAtInputValue,
-  FUNDING_SOURCE_OPTIONS,
-  getWalletFieldBadgeClass,
-  PLATFORM_OPTIONS,
-  TRADE_STATUS_OPTIONS,
-} from "@/lib/wallet-fields"
+import { SortableWalletRow, WalletRowOverlay } from "@/components/wallet-breakdown/sortable-wallet-row"
+
+type WalletPatch = {
+  label?: string | null
+  trade_status?: string | null
+  funding_source_label?: string | null
+  platform?: string | null
+  funded_at?: string | null
+  sort_order?: number | null
+}
 
 interface WalletBreakdownProps {
   wallets: WalletHoldingSummary[]
@@ -44,23 +52,15 @@ interface WalletBreakdownProps {
   selectedWalletIds?: string[]
   onToggleWallet?: (walletId: string, checked: boolean) => void
   onToggleAllWallets?: (checked: boolean) => void
-  onUpdateWallet?: (
-    walletId: string,
-    patch: {
-      label?: string | null
-      trade_status?: string | null
-      funding_source_label?: string | null
-      platform?: string | null
-      funded_at?: string | null
-      sort_order?: number | null
-    }
-  ) => Promise<void>
+  onUpdateWallet?: (walletId: string, patch: WalletPatch) => Promise<void>
   onMoveWallet?: (walletId: string, direction: "up" | "down") => Promise<void>
+  onReorderWallets?: (orderedWalletIds: string[]) => Promise<void>
   onRemoveWallet?: (walletId: string) => Promise<void>
+  onRefreshFunding?: (walletId: string) => Promise<void>
 }
 
-function shortAddress(address: string) {
-  return `${address.slice(0, 8)}...${address.slice(-8)}`
+function getRowId(wallet: WalletHoldingSummary) {
+  return wallet.walletId || wallet.walletAddress
 }
 
 function formatSol(value: number | null) {
@@ -95,25 +95,103 @@ export function WalletBreakdown({
   onToggleAllWallets,
   onUpdateWallet,
   onMoveWallet,
+  onReorderWallets,
   onRemoveWallet,
+  onRefreshFunding,
 }: WalletBreakdownProps) {
-  const totalSol = wallets.reduce((sum, wallet) => sum + (wallet.solBalance || 0), 0)
-  const totalUsdc = wallets.reduce((sum, wallet) => sum + wallet.usdcBalance, 0)
-  const totalSelectedToken = wallets.reduce(
-    (sum, wallet) => sum + wallet.selectedTokenBalance,
-    0
+  const [activeRowId, setActiveRowId] = useState<string | null>(null)
+  const [overRowId, setOverRowId] = useState<string | null>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
   )
-  const totalSelectedTokenSupplyPercent = wallets.reduce(
-    (sum, wallet) => sum + (wallet.selectedTokenSupplyPercent || 0),
-    0
+
+  const walletIds = useMemo(() => wallets.map((wallet) => getRowId(wallet)), [wallets])
+  const walletIdSet = useMemo(() => new Set(selectedWalletIds), [selectedWalletIds])
+  const walletById = useMemo(
+    () => new Map(wallets.map((wallet) => [getRowId(wallet), wallet])),
+    [wallets]
   )
-  const allSelectableWalletIds = wallets
-    .map((wallet) => wallet.walletId)
-    .filter((walletId): walletId is string => Boolean(walletId))
+  const walletIndexById = useMemo(
+    () => new Map(walletIds.map((walletId, index) => [walletId, index])),
+    [walletIds]
+  )
+
+  const totals = useMemo(
+    () => ({
+      totalSol: wallets.reduce((sum, wallet) => sum + (wallet.solBalance || 0), 0),
+      totalUsdc: wallets.reduce((sum, wallet) => sum + wallet.usdcBalance, 0),
+      totalSelectedToken: wallets.reduce(
+        (sum, wallet) => sum + wallet.selectedTokenBalance,
+        0
+      ),
+      totalSelectedTokenSupplyPercent: wallets.reduce(
+        (sum, wallet) => sum + (wallet.selectedTokenSupplyPercent || 0),
+        0
+      ),
+    }),
+    [wallets]
+  )
+
+  const allSelectableWalletIds = useMemo(
+    () =>
+      wallets
+        .map((wallet) => wallet.walletId)
+        .filter((walletId): walletId is string => Boolean(walletId)),
+    [wallets]
+  )
   const areAllWalletsSelected =
     selectable &&
     allSelectableWalletIds.length > 0 &&
     allSelectableWalletIds.every((walletId) => selectedWalletIds.includes(walletId))
+
+  const activeWallet = activeRowId ? walletById.get(activeRowId) || null : null
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveRowId(String(event.active.id))
+    setOverRowId(String(event.active.id))
+  }, [])
+
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    setOverRowId(event.over ? String(event.over.id) : null)
+  }, [])
+
+  const handleDragCancel = useCallback(() => {
+    setActiveRowId(null)
+    setOverRowId(null)
+  }, [])
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const activeId = String(event.active.id)
+      const nextOverId = event.over ? String(event.over.id) : null
+
+      setActiveRowId(null)
+      setOverRowId(null)
+
+      if (!nextOverId || activeId === nextOverId || !onReorderWallets) {
+        return
+      }
+
+      const activeIndex = walletIndexById.get(activeId)
+      const overIndex = walletIndexById.get(nextOverId)
+
+      if (activeIndex === undefined || overIndex === undefined || activeIndex === overIndex) {
+        return
+      }
+
+      const orderedWalletIds = arrayMove(walletIds, activeIndex, overIndex)
+      void onReorderWallets(orderedWalletIds)
+    },
+    [onReorderWallets, walletIds, walletIndexById]
+  )
 
   if (isLoading) {
     return (
@@ -133,340 +211,131 @@ export function WalletBreakdown({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow className="border-border hover:bg-transparent">
-            {selectable && (
-              <TableHead className="w-[48px]">
-                <Checkbox
-                  checked={areAllWalletsSelected}
-                  onCheckedChange={(checked) => {
-                    if (onToggleAllWallets) {
-                      onToggleAllWallets(Boolean(checked))
-                    }
-                  }}
-                />
-              </TableHead>
-            )}
-            <TableHead className="w-[72px]">Orden</TableHead>
-            <TableHead>Label</TableHead>
-            <TableHead>Address</TableHead>
-            <TableHead>Tradeada</TableHead>
-            <TableHead>Foundeada</TableHead>
-            <TableHead>Plataforma</TableHead>
-            <TableHead>Dia</TableHead>
-            <TableHead className="text-right">SOL</TableHead>
-            <TableHead className="text-right">USDC</TableHead>
-            <TableHead className="text-right">
-              <div className="flex items-center justify-end gap-2">
-                <span>Selected Token</span>
-                {selectedTokenSymbol && (
-                  <Badge variant="outline" className="font-mono text-[10px]">
-                    {selectedTokenSymbol}
-                  </Badge>
-                )}
-              </div>
-            </TableHead>
-            <TableHead className="text-right">% Supply</TableHead>
-            {onRemoveWallet && <TableHead className="w-[60px]" />}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {wallets.map((wallet, index) => (
-            <TableRow key={wallet.walletAddress} className="border-border">
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragCancel={handleDragCancel}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <Table>
+          <TableHeader className="sticky top-0 z-10 bg-card">
+            <TableRow className="border-border hover:bg-transparent">
               {selectable && (
-                <TableCell>
+                <TableHead className="w-[48px]">
                   <Checkbox
-                    checked={
-                      wallet.walletId ? selectedWalletIds.includes(wallet.walletId) : false
-                    }
+                    checked={areAllWalletsSelected}
                     onCheckedChange={(checked) => {
-                      if (wallet.walletId && onToggleWallet) {
-                        onToggleWallet(wallet.walletId, Boolean(checked))
+                      if (onToggleAllWallets) {
+                        onToggleAllWallets(Boolean(checked))
                       }
                     }}
                   />
-                </TableCell>
+                </TableHead>
               )}
-              <TableCell>
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() =>
-                      wallet.walletId && onMoveWallet
-                        ? void onMoveWallet(wallet.walletId, "up")
-                        : undefined
-                    }
-                    disabled={index === 0 || !wallet.walletId || !onMoveWallet}
-                  >
-                    <ChevronUp className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() =>
-                      wallet.walletId && onMoveWallet
-                        ? void onMoveWallet(wallet.walletId, "down")
-                        : undefined
-                    }
-                    disabled={
-                      index === wallets.length - 1 || !wallet.walletId || !onMoveWallet
-                    }
-                  >
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  </Button>
+              <TableHead className="w-[56px]">Mover</TableHead>
+              <TableHead>Label</TableHead>
+              <TableHead>Address</TableHead>
+              <TableHead>Tradeada</TableHead>
+              <TableHead>Foundeada</TableHead>
+              <TableHead>Plataforma</TableHead>
+              <TableHead>Dia</TableHead>
+              <TableHead className="text-right">SOL</TableHead>
+              <TableHead className="text-right">USDC</TableHead>
+              <TableHead className="text-right">
+                <div className="flex items-center justify-end gap-2">
+                  <span>Selected Token</span>
+                  {selectedTokenSymbol && (
+                    <Badge variant="outline" className="font-mono text-[10px]">
+                      {selectedTokenSymbol}
+                    </Badge>
+                  )}
                 </div>
-              </TableCell>
-              <TableCell className="font-medium">
-                <WalletLabelInput
-                  walletId={wallet.walletId}
-                  value={wallet.walletLabel}
-                  onSave={onUpdateWallet}
-                />
-              </TableCell>
-              <TableCell>
-                <code className="text-xs text-muted-foreground">
-                  <SolscanLink
-                    address={wallet.walletAddress}
-                    label={shortAddress(wallet.walletAddress)}
+              </TableHead>
+              <TableHead className="text-right">% Supply</TableHead>
+              {(onMoveWallet || onRemoveWallet) && <TableHead className="w-[60px]" />}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <SortableContext items={walletIds} strategy={verticalListSortingStrategy}>
+              {wallets.map((wallet, index) => {
+                const rowId = getRowId(wallet)
+                const activeIndex =
+                  activeRowId !== null ? walletIndexById.get(activeRowId) : undefined
+                const overIndex = overRowId !== null ? walletIndexById.get(overRowId) : undefined
+                const dropIndicator =
+                  activeRowId &&
+                  overRowId === rowId &&
+                  activeRowId !== rowId &&
+                  activeIndex !== undefined &&
+                  overIndex !== undefined
+                    ? activeIndex < overIndex
+                      ? "after"
+                      : "before"
+                    : null
+
+                return (
+                  <SortableWalletRow
+                    key={rowId}
+                    wallet={wallet}
+                    selectedToken={selectedToken}
+                    selectable={selectable}
+                    selected={wallet.walletId ? walletIdSet.has(wallet.walletId) : false}
+                    onToggleWallet={onToggleWallet}
+                    onUpdateWallet={onUpdateWallet}
+                    onMoveWallet={onMoveWallet}
+                    onRemoveWallet={onRemoveWallet}
+                    onRefreshFunding={onRefreshFunding}
+                    canMoveUp={index > 0}
+                    canMoveDown={index < wallets.length - 1}
+                    dropIndicator={dropIndicator}
                   />
-                </code>
+                )
+              })}
+            </SortableContext>
+            <TableRow className="border-border bg-muted/30">
+              {selectable && <TableCell />}
+              <TableCell />
+              <TableCell className="font-semibold">Total</TableCell>
+              <TableCell />
+              <TableCell />
+              <TableCell />
+              <TableCell />
+              <TableCell />
+              <TableCell className="text-right font-mono font-semibold">
+                {formatSol(totals.totalSol)}
               </TableCell>
-              <TableCell>
-                <WalletFieldSelect
-                  value={wallet.tradeStatus}
-                  options={TRADE_STATUS_OPTIONS}
-                  placeholder="---"
-                  onChange={(value) =>
-                    wallet.walletId && onUpdateWallet
-                      ? onUpdateWallet(wallet.walletId, { trade_status: value })
-                      : Promise.resolve()
-                  }
-                />
+              <TableCell className="text-right font-mono font-semibold">
+                {formatUsdc(totals.totalUsdc)}
               </TableCell>
-              <TableCell>
-                <WalletFieldSelect
-                  value={wallet.fundingSourceLabel}
-                  options={FUNDING_SOURCE_OPTIONS}
-                  placeholder="---"
-                  onChange={(value) =>
-                    wallet.walletId && onUpdateWallet
-                      ? onUpdateWallet(wallet.walletId, {
-                          funding_source_label: value,
-                        })
-                      : Promise.resolve()
-                  }
-                />
-                {wallet.firstFunderAddress && (
-                  <div className="mt-1 space-y-1">
-                    <p className="max-w-[120px] truncate font-mono text-[10px] text-muted-foreground">
-                      <SolscanLink
-                        address={wallet.firstFunderAddress}
-                        label={shortAddress(wallet.firstFunderAddress)}
-                      />
-                    </p>
-                    {wallet.fundingLabelSource && (
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
-                        {wallet.fundingLabelSource}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </TableCell>
-              <TableCell>
-                <WalletFieldSelect
-                  value={wallet.platform}
-                  options={PLATFORM_OPTIONS}
-                  placeholder="---"
-                  onChange={(value) =>
-                    wallet.walletId && onUpdateWallet
-                      ? onUpdateWallet(wallet.walletId, { platform: value })
-                      : Promise.resolve()
-                  }
-                />
-              </TableCell>
-              <TableCell>
-                <Input
-                  type="datetime-local"
-                  value={formatFundedAtInputValue(wallet.fundedAt)}
-                  onChange={(event) => {
-                    if (wallet.walletId && onUpdateWallet) {
-                      void onUpdateWallet(wallet.walletId, {
-                        funded_at: event.target.value || null,
-                      })
-                    }
-                  }}
-                  className="h-8 min-w-[168px] border-border bg-transparent text-xs"
-                />
-              </TableCell>
-              <TableCell className="text-right font-mono">
-                {formatSol(wallet.solBalance)}
-              </TableCell>
-              <TableCell className="text-right font-mono">
-                {formatUsdc(wallet.usdcBalance)}
-              </TableCell>
-              <TableCell className="text-right font-mono font-medium">
-                {selectedToken ? wallet.selectedTokenBalanceFormatted || "0" : "-"}
+              <TableCell className="text-right font-mono font-semibold">
+                {selectedToken
+                  ? formatNumber(totals.totalSelectedToken, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 6,
+                    })
+                  : "-"}
               </TableCell>
               <TableCell className="text-right font-mono font-semibold text-primary">
-                {selectedToken ? formatSupplyPercent(wallet.selectedTokenSupplyPercent) : "-"}
+                {selectedToken ? formatSupplyPercent(totals.totalSelectedTokenSupplyPercent) : "-"}
               </TableCell>
-              {onRemoveWallet && (
-                <TableCell className="text-right">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    disabled={!wallet.walletId}
-                    onClick={() =>
-                      wallet.walletId ? void onRemoveWallet(wallet.walletId) : undefined
-                    }
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </TableCell>
-              )}
+              {(onMoveWallet || onRemoveWallet) && <TableCell />}
             </TableRow>
-          ))}
-          <TableRow className="border-border bg-muted/30">
-            {selectable && <TableCell />}
-            <TableCell />
-            <TableCell className="font-semibold">Total</TableCell>
-            <TableCell />
-            <TableCell />
-            <TableCell />
-            <TableCell />
-            <TableCell />
-            <TableCell className="text-right font-mono font-semibold">
-              {formatSol(totalSol)}
-            </TableCell>
-            <TableCell className="text-right font-mono font-semibold">
-              {formatUsdc(totalUsdc)}
-            </TableCell>
-            <TableCell className="text-right font-mono font-semibold">
-              {selectedToken
-                ? formatNumber(totalSelectedToken, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 6,
-                  })
-                : "-"}
-            </TableCell>
-            <TableCell className="text-right font-mono font-semibold text-primary">
-              {selectedToken ? formatSupplyPercent(totalSelectedTokenSupplyPercent) : "-"}
-            </TableCell>
-            {onRemoveWallet && <TableCell />}
-          </TableRow>
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
+          </TableBody>
+        </Table>
+      </div>
 
-function WalletLabelInput({
-  walletId,
-  value,
-  onSave,
-}: {
-  walletId: string | null
-  value: string | null
-  onSave?: (
-    walletId: string,
-    patch: {
-      label?: string | null
-      trade_status?: string | null
-      funding_source_label?: string | null
-      platform?: string | null
-      funded_at?: string | null
-      sort_order?: number | null
-    }
-  ) => Promise<void>
-}) {
-  const [draft, setDraft] = useState(value || "")
-
-  useEffect(() => {
-    setDraft(value || "")
-  }, [value])
-
-  const commit = async () => {
-    if (!walletId || !onSave) {
-      return
-    }
-
-    const normalizedCurrent = (value || "").trim()
-    const normalizedDraft = draft.trim()
-
-    if (normalizedCurrent === normalizedDraft) {
-      return
-    }
-
-    await onSave(walletId, {
-      label: normalizedDraft || null,
-    })
-  }
-
-  return (
-    <Input
-      value={draft}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => {
-        void commit()
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault()
-          void commit()
-          event.currentTarget.blur()
-        }
-      }}
-      placeholder="Unnamed Wallet"
-      className="h-8 min-w-[160px] border-border bg-transparent text-sm font-medium"
-    />
-  )
-}
-
-function WalletFieldSelect({
-  value,
-  options,
-  placeholder,
-  onChange,
-}: {
-  value: string | null
-  options: readonly string[]
-  placeholder: string
-  onChange: (value: string | null) => Promise<void>
-}) {
-  return (
-    <Select
-      value={value || "__empty__"}
-      onValueChange={(nextValue) => {
-        void onChange(nextValue === "__empty__" ? null : nextValue)
-      }}
-    >
-      <SelectTrigger
-        className={cn(
-          "h-8 min-w-[110px] border px-2 text-xs",
-          getWalletFieldBadgeClass(value)
-        )}
-      >
-        <SelectValue placeholder={placeholder}>
-          <span className="truncate">{value || placeholder}</span>
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="__empty__">---</SelectItem>
-        {options.map((option) => (
-          <SelectItem key={option} value={option}>
-            {option}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+      <DragOverlay dropAnimation={null}>
+        {activeWallet ? (
+          <WalletRowOverlay
+            wallet={activeWallet}
+            selectedToken={selectedToken}
+            selectedTokenSymbol={selectedTokenSymbol}
+          />
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   )
 }

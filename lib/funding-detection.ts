@@ -12,6 +12,8 @@ type FundingLabelSource =
   | "local_mapping"
   | "fallback"
 
+type SupabaseClientLike = Awaited<ReturnType<typeof import("@/lib/supabase/server").createClient>>
+
 interface HeliusEnhancedTransfer {
   fromUserAccount?: string
   toUserAccount?: string
@@ -161,17 +163,14 @@ async function fetchEarliestFundingTransactions(walletAddress: string) {
     return [] as HeliusEnhancedTransaction[]
   }
 
-  const buildUrl = () => {
-    const url = new URL(`${HELIUS_ENHANCED_BASE_URL}/${walletAddress}/transactions`)
-    url.searchParams.set("api-key", HELIUS_API_KEY)
-    url.searchParams.set("sort-order", "asc")
-    url.searchParams.set("limit", "25")
-    url.searchParams.set("type", "TRANSFER")
-    return url.toString()
-  }
+  const url = new URL(`${HELIUS_ENHANCED_BASE_URL}/${walletAddress}/transactions`)
+  url.searchParams.set("api-key", HELIUS_API_KEY)
+  url.searchParams.set("sort-order", "asc")
+  url.searchParams.set("limit", "25")
+  url.searchParams.set("type", "TRANSFER")
 
   try {
-    const response = await fetch(buildUrl(), {
+    const response = await fetch(url.toString(), {
       next: { revalidate: 0 },
     })
 
@@ -371,7 +370,7 @@ export async function detectWalletFundingMetadata(
   }
 }
 
-export async function loadFundingSourceAddressMap(supabase: any) {
+export async function loadFundingSourceAddressMap(supabase: SupabaseClientLike) {
   const { data, error } = await supabase
     .from("funding_source_addresses")
     .select("label,address,source")
@@ -384,107 +383,105 @@ export async function loadFundingSourceAddressMap(supabase: any) {
 
   return new Map<string, string>(
     rows
-      .filter((row: FundingSourceAddressRow) => row.address && row.label)
-      .map((row: FundingSourceAddressRow) => [row.address, row.label])
+      .filter((row) => row.address && row.label)
+      .map((row) => [row.address, row.label])
   )
 }
 
-export async function enrichWalletFundingMetadata(
-  supabase: any,
-  wallets: TrackedWallet[]
+export function shouldAutoDetectFunding(wallet: TrackedWallet) {
+  if (wallet.funding_detected_at) {
+    return false
+  }
+
+  return (
+    !wallet.funded_at &&
+    !wallet.funding_source_address &&
+    !wallet.funding_source_label &&
+    !wallet.funding_label_source
+  )
+}
+
+export async function detectAndPersistWalletFunding(
+  supabase: SupabaseClientLike,
+  wallet: TrackedWallet,
+  options: { force?: boolean } = {}
 ) {
-  if (!HELIUS_API_KEY || wallets.length === 0) {
-    return wallets
+  if (!HELIUS_API_KEY) {
+    return wallet
   }
 
-  const trackedWalletAddresses = new Set(wallets.map((wallet) => wallet.address))
-  let sourceLabels = new Map<string, string>()
-
-  try {
-    sourceLabels = await loadFundingSourceAddressMap(supabase)
-  } catch (error) {
-    console.error("Failed to load funding source address map:", error)
+  const shouldDetect = options.force ? true : shouldAutoDetectFunding(wallet)
+  if (!shouldDetect) {
+    return wallet
   }
 
-  const updatedWallets = [...wallets]
+  const [{ data: allWallets, error: walletsError }, sourceLabels] = await Promise.all([
+    supabase.from("tracked_wallets").select("address"),
+    loadFundingSourceAddressMap(supabase).catch(() => new Map<string, string>()),
+  ])
 
-  for (let index = 0; index < updatedWallets.length; index += 1) {
-    const wallet = updatedWallets[index]
-    const needsDetection =
-      !wallet.funded_at ||
-      !wallet.funding_source_address ||
-      !wallet.funding_source_label ||
-      !wallet.funding_label_source
-
-    if (!needsDetection) {
-      continue
-    }
-
-    const detection = await detectWalletFundingMetadata(
-      wallet.address,
-      trackedWalletAddresses,
-      sourceLabels
-    )
-
-    const nextWallet: TrackedWallet = {
-      ...wallet,
-      funded_at: wallet.funded_at || detection.fundedAt,
-      first_funder_address:
-        wallet.first_funder_address || detection.firstFunderAddress,
-      funding_source_address:
-        wallet.funding_source_address || detection.fundingSourceAddress,
-      funding_source_label:
-        wallet.funding_source_label ||
-        detection.fundingSourceLabel ||
-        "---",
-      funding_label_source:
-        wallet.funding_label_source || detection.fundingLabelSource,
-      funding_detection_method:
-        detection.fundingDetectionMethod || wallet.funding_detection_method,
-      funding_detected_at:
-        detection.fundingDetectionMethod || detection.fundingSourceAddress
-          ? new Date().toISOString()
-          : wallet.funding_detected_at,
-    }
-
-    const updatePayload: Record<string, unknown> = {}
-
-    if (!wallet.funded_at && nextWallet.funded_at) {
-      updatePayload.funded_at = nextWallet.funded_at
-    }
-    if (!wallet.first_funder_address && nextWallet.first_funder_address) {
-      updatePayload.first_funder_address = nextWallet.first_funder_address
-    }
-    if (!wallet.funding_source_address && nextWallet.funding_source_address) {
-      updatePayload.funding_source_address = nextWallet.funding_source_address
-    }
-    if (!wallet.funding_source_label && nextWallet.funding_source_label) {
-      updatePayload.funding_source_label = nextWallet.funding_source_label
-    }
-    if (!wallet.funding_label_source && nextWallet.funding_label_source) {
-      updatePayload.funding_label_source = nextWallet.funding_label_source
-    }
-    if (
-      (nextWallet.funding_source_address || nextWallet.funded_at) &&
-      nextWallet.funding_detection_method
-    ) {
-      updatePayload.funding_detection_method = nextWallet.funding_detection_method
-      updatePayload.funding_detected_at = nextWallet.funding_detected_at
-    }
-
-    if (Object.keys(updatePayload).length > 0) {
-      const { error } = await supabase
-        .from("tracked_wallets")
-        .update(updatePayload)
-        .eq("id", wallet.id)
-
-      if (error) {
-        console.error("Failed to persist funding metadata:", error.message)
-      }
-    }
-
-    updatedWallets[index] = nextWallet
+  if (walletsError) {
+    throw new Error(walletsError.message)
   }
 
-  return updatedWallets
+  const trackedWalletAddresses = new Set(
+    ((allWallets || []) as { address: string }[]).map((entry) => entry.address)
+  )
+
+  const detection = await detectWalletFundingMetadata(
+    wallet.address,
+    trackedWalletAddresses,
+    sourceLabels
+  )
+
+  const nextWallet: TrackedWallet = {
+    ...wallet,
+    funded_at: detection.fundedAt,
+    first_funder_address: detection.firstFunderAddress,
+    funding_source_address: detection.fundingSourceAddress,
+    funding_source_label: detection.fundingSourceLabel || "---",
+    funding_label_source: detection.fundingLabelSource,
+    funding_detection_method: detection.fundingDetectionMethod,
+    funding_detected_at: detection.fundingDetectionMethod
+      ? new Date().toISOString()
+      : wallet.funding_detected_at,
+  }
+
+  const updatePayload: Record<string, unknown> = {
+    first_funder_address: nextWallet.first_funder_address,
+    funding_source_address: nextWallet.funding_source_address,
+    funding_source_label: nextWallet.funding_source_label,
+    funding_label_source: nextWallet.funding_label_source,
+    funding_detection_method: nextWallet.funding_detection_method,
+    funding_detected_at: nextWallet.funding_detected_at,
+  }
+
+  if (!wallet.funded_at || options.force) {
+    updatePayload.funded_at = nextWallet.funded_at
+  }
+
+  const { error } = await supabase
+    .from("tracked_wallets")
+    .update(updatePayload)
+    .eq("id", wallet.id)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return nextWallet
+}
+
+export async function detectAndPersistWalletFundingBatch(
+  supabase: SupabaseClientLike,
+  wallets: TrackedWallet[],
+  options: { force?: boolean } = {}
+) {
+  const results: TrackedWallet[] = []
+
+  for (const wallet of wallets) {
+    results.push(await detectAndPersistWalletFunding(supabase, wallet, options))
+  }
+
+  return results
 }

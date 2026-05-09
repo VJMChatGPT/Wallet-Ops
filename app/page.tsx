@@ -23,6 +23,7 @@ import type {
   HoldingsResponseData,
   TrackedToken,
   TrackedWallet,
+  WalletHoldingSummary,
   WorkbookSheetWithWalletCount,
 } from "@/lib/types"
 
@@ -36,6 +37,32 @@ interface SheetsResponse {
 
 function formatPercentValue(value: number | null | undefined, digits = 4) {
   return typeof value === "number" ? `${value.toFixed(digits)}%` : "-"
+}
+
+function reorderWalletSummaries(
+  wallets: WalletHoldingSummary[],
+  orderedWalletIds: string[]
+) {
+  const walletById = new Map(
+    wallets.map((wallet) => [
+      wallet.walletId || wallet.walletAddress,
+      wallet,
+    ])
+  )
+
+  return orderedWalletIds.reduce<WalletHoldingSummary[]>((orderedWallets, walletId, index) => {
+    const wallet = walletById.get(walletId)
+    if (!wallet) {
+      return orderedWallets
+    }
+
+    orderedWallets.push({
+      ...wallet,
+      sortOrder: index,
+    })
+
+    return orderedWallets
+  }, [])
 }
 
 export default function WalletWorkbookPage() {
@@ -212,12 +239,61 @@ function WalletWorkbookContent() {
     [activeSheetId, mutateHoldings]
   )
 
-  const handleMoveWallet = useCallback(
-    async (walletId: string, direction: "up" | "down") => {
-      if (!activeSheetId) {
+  const persistWalletOrder = useCallback(
+    async (orderedWalletIds: string[]) => {
+      if (!activeSheetId || !holdingsData) {
         return
       }
 
+      const reorderedWallets = reorderWalletSummaries(
+        holdingsData.walletSummaries,
+        orderedWalletIds
+      )
+      const previousData = holdingsData
+      const nextData: HoldingsResponseData = {
+        ...holdingsData,
+        walletSummaries: reorderedWallets,
+      }
+
+      await mutateHoldings(nextData, {
+        revalidate: false,
+        populateCache: true,
+      })
+
+      try {
+        await readApiResponse(
+          await fetch(`/api/sheets/${activeSheetId}/wallets/reorder`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ walletIds: orderedWalletIds }),
+          })
+        )
+      } catch (error) {
+        await mutateHoldings(previousData, {
+          revalidate: false,
+          populateCache: true,
+        })
+        throw error
+      }
+    },
+    [activeSheetId, holdingsData, mutateHoldings]
+  )
+
+  const handleReorderWallets = useCallback(
+    async (orderedWalletIds: string[]) => {
+      try {
+        await persistWalletOrder(orderedWalletIds)
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Failed to save wallet order"
+        )
+      }
+    },
+    [persistWalletOrder]
+  )
+
+  const handleMoveWallet = useCallback(
+    async (walletId: string, direction: "up" | "down") => {
       const currentIndex = walletSummaries.findIndex((wallet) => wallet.walletId === walletId)
       if (currentIndex === -1) {
         return
@@ -228,35 +304,15 @@ function WalletWorkbookContent() {
         return
       }
 
-      const currentWallet = walletSummaries[currentIndex]
-      const targetWallet = walletSummaries[targetIndex]
-      if (!currentWallet?.walletId || !targetWallet?.walletId) {
-        return
-      }
+      const orderedWalletIds = walletSummaries
+        .map((wallet) => wallet.walletId || wallet.walletAddress)
+        .filter(Boolean)
+      const [movedWalletId] = orderedWalletIds.splice(currentIndex, 1)
+      orderedWalletIds.splice(targetIndex, 0, movedWalletId)
 
-      const currentSortOrder = currentWallet.sortOrder ?? currentIndex
-      const targetSortOrder = targetWallet.sortOrder ?? targetIndex
-
-      await Promise.all([
-        readApiResponse(
-          await fetch(`/api/sheets/${activeSheetId}/wallets/${currentWallet.walletId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ row_order: targetSortOrder }),
-          })
-        ),
-        readApiResponse(
-          await fetch(`/api/sheets/${activeSheetId}/wallets/${targetWallet.walletId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ row_order: currentSortOrder }),
-          })
-        ),
-      ])
-
-      await mutateHoldings()
+      await handleReorderWallets(orderedWalletIds)
     },
-    [activeSheetId, mutateHoldings, walletSummaries]
+    [handleReorderWallets, walletSummaries]
   )
 
   const handleRemoveWalletFromSheet = useCallback(
@@ -279,6 +335,23 @@ function WalletWorkbookContent() {
       await Promise.all([mutateSheets(), mutateHoldings()])
     },
     [activeSheetId, isMasterSheet, mutateHoldings, mutateSheets]
+  )
+
+  const handleRefreshFunding = useCallback(
+    async (walletId: string) => {
+      const result = await readApiResponse<{ wallet: TrackedWallet }>(
+        await fetch(`/api/wallets/${walletId}/refresh-funding`, {
+          method: "POST",
+        })
+      )
+
+      toast.success("Funding refreshed", {
+        description:
+          result.wallet.funding_source_label || "Funding metadata updated.",
+      })
+      await Promise.all([mutateWallets(), mutateHoldings()])
+    },
+    [mutateHoldings, mutateWallets]
   )
 
   const handleAddWallet = useCallback(
@@ -589,7 +662,9 @@ function WalletWorkbookContent() {
             onToggleAllWallets={handleToggleAllWallets}
             onUpdateWallet={handleUpdateSheetWallet}
             onMoveWallet={handleMoveWallet}
+            onReorderWallets={handleReorderWallets}
             onRemoveWallet={!isMasterSheet ? handleRemoveWalletFromSheet : undefined}
+            onRefreshFunding={isMasterSheet ? handleRefreshFunding : undefined}
           />
         </div>
       </main>

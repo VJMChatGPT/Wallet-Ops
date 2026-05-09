@@ -1,4 +1,3 @@
-import { enrichWalletFundingMetadata } from "@/lib/funding-detection"
 import { compareWalletOrder } from "@/lib/wallet-order"
 import type { SheetWallet, TrackedWallet, WorkbookSheet } from "@/lib/types"
 
@@ -226,16 +225,11 @@ export async function getMergedSheetWallets(
   }
 
   const rawRows = (data || []) as unknown as SheetWalletRowRecord[]
-  const globalWallets = rawRows
-    .map((row) => row.wallet)
-    .filter((wallet): wallet is TrackedWallet => Boolean(wallet))
-  const enrichedWallets = await enrichWalletFundingMetadata(supabase, globalWallets)
-  const enrichedById = new Map(enrichedWallets.map((wallet) => [wallet.id, wallet]))
   const isMasterSheet = sheet.type === "master"
 
   const merged = rawRows
     .map((row) => {
-      const wallet = enrichedById.get(row.wallet_id) || row.wallet
+      const wallet = row.wallet
       if (!wallet) {
         return null
       }

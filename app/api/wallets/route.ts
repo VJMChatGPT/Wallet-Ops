@@ -7,6 +7,7 @@ import {
   normalizePlatform,
   normalizeTradeStatus,
 } from "@/lib/wallet-fields"
+import { detectAndPersistWalletFundingBatch } from "@/lib/funding-detection"
 import { sortWalletsByOrder } from "@/lib/wallet-order"
 import { getOrCreateMasterSheet } from "@/lib/sheets"
 import type { TrackedWallet } from "@/lib/types"
@@ -110,7 +111,8 @@ async function getNextSortOrder(
 
 async function syncWalletsToMasterSheet(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  wallets: TrackedWallet[]
+  wallets: TrackedWallet[],
+  options: { updateExisting?: boolean } = {}
 ) {
   if (wallets.length === 0) {
     return
@@ -150,12 +152,42 @@ async function syncWalletsToMasterSheet(
     }))
 
   if (rowsToInsert.length === 0) {
-    return
+    if (!options.updateExisting) {
+      return
+    }
   }
 
-  const { error: insertError } = await supabase.from("sheet_wallets").insert(rowsToInsert)
-  if (insertError) {
-    throw new Error(insertError.message)
+  if (rowsToInsert.length > 0) {
+    const { error: insertError } = await supabase.from("sheet_wallets").insert(rowsToInsert)
+    if (insertError) {
+      throw new Error(insertError.message)
+    }
+  }
+
+  if (options.updateExisting) {
+    for (const wallet of wallets) {
+      const { error: updateError } = await supabase
+        .from("sheet_wallets")
+        .update({
+          label: wallet.label,
+          trade_status: wallet.trade_status,
+          funding_source_label: wallet.funding_source_label,
+          funding_source_address: wallet.funding_source_address,
+          funding_label_source: wallet.funding_label_source,
+          first_funder_address: wallet.first_funder_address,
+          platform: wallet.platform,
+          funded_at: wallet.funded_at,
+          funding_detection_method: wallet.funding_detection_method,
+          funding_detected_at: wallet.funding_detected_at,
+          row_order: wallet.sort_order,
+        })
+        .eq("sheet_id", masterSheet.id)
+        .eq("wallet_id", wallet.id)
+
+      if (updateError) {
+        throw new Error(updateError.message)
+      }
+    }
   }
 }
 
@@ -230,9 +262,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    await syncWalletsToMasterSheet(supabase, [data as TrackedWallet])
+    const detectedWallets = await detectAndPersistWalletFundingBatch(supabase, [
+      data as TrackedWallet,
+    ])
+    await syncWalletsToMasterSheet(supabase, detectedWallets, {
+      updateExisting: true,
+    })
 
-    return NextResponse.json(data, { status: 201 })
+    return NextResponse.json(detectedWallets[0], { status: 201 })
   } catch (error) {
     return toErrorResponse(error)
   }
@@ -367,12 +404,18 @@ async function handleBulkCreate(
       return NextResponse.json({ error: insertError.message }, { status: 500 })
     }
 
-    await syncWalletsToMasterSheet(supabase, (data || []) as TrackedWallet[])
+    const detectedWallets = await detectAndPersistWalletFundingBatch(
+      supabase,
+      (data || []) as TrackedWallet[]
+    )
+    await syncWalletsToMasterSheet(supabase, detectedWallets, {
+      updateExisting: true,
+    })
 
     return NextResponse.json({
-      wallets: data || [],
+      wallets: detectedWallets,
       failures,
-      insertedCount: data?.length || 0,
+      insertedCount: detectedWallets.length,
     })
   }
 
