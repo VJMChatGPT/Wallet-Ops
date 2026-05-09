@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { getTokenFromDexScreener, getBestPair } from "@/lib/api"
 import {
+  isBuiltInTrackedMint,
+  JUPITER_LEND_USDC_MINT,
   mergeTrackedTokensWithDefaults,
   SOLANA_USDC_MINT,
 } from "@/lib/default-tokens"
@@ -57,9 +59,14 @@ export async function POST(request: Request) {
 
     const cleanMint = mint.trim()
 
-    if (cleanMint === SOLANA_USDC_MINT) {
+    if (isBuiltInTrackedMint(cleanMint)) {
       return NextResponse.json(
-        { error: "USDC is already tracked by default" },
+        {
+          error:
+            cleanMint === SOLANA_USDC_MINT
+              ? "USDC is already tracked by default"
+              : "jlUSDC is already tracked by default",
+        },
         { status: 409 }
       )
     }
@@ -122,9 +129,14 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Mint address is required" }, { status: 400 })
     }
 
-    if (mint === SOLANA_USDC_MINT) {
+    if (isBuiltInTrackedMint(mint)) {
       return NextResponse.json(
-        { error: "USDC is a built-in token and cannot be removed" },
+        {
+          error:
+            mint === JUPITER_LEND_USDC_MINT
+              ? "jlUSDC is a built-in token and cannot be removed"
+              : "USDC is a built-in token and cannot be removed",
+        },
         { status: 400 }
       )
     }

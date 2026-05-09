@@ -7,6 +7,7 @@ import {
   getWalletTokenBalances,
 } from "@/lib/api"
 import {
+  JUPITER_LEND_USDC_MINT,
   mergeTrackedTokensWithDefaults,
   SOLANA_USDC_MINT,
   WRAPPED_SOL_MINT,
@@ -76,6 +77,8 @@ export async function getLiveHoldingsData(
       trackedTokenCount: effectiveTrackedTokens.length,
       totalSolBalance: 0,
       totalUsdcBalance: 0,
+      totalJlUsdcBalance: 0,
+      totalDollarValueUsd: 0,
       totalSelectedTokenBalance: 0,
       totalSelectedTokenSupplyPercent: null,
       selectedTokenMint,
@@ -83,7 +86,7 @@ export async function getLiveHoldingsData(
     }
   }
 
-  const allowedMints = new Set<string>([SOLANA_USDC_MINT])
+  const allowedMints = new Set<string>([SOLANA_USDC_MINT, JUPITER_LEND_USDC_MINT])
   if (selectedTokenMint) {
     allowedMints.add(selectedTokenMint)
   }
@@ -124,8 +127,9 @@ export async function getLiveHoldingsData(
       const decimals = asset.token_info?.decimals || defaultToken?.decimals || 9
       const rawBalance = asset.token_info?.balance || 0
       const actualBalance = rawBalance / Math.pow(10, decimals)
-      const isUsdc = mint === SOLANA_USDC_MINT
-      const priceUsd = bestPair ? parseFloat(bestPair.priceUsd) : isUsdc ? 1 : null
+      const isStableDollarToken =
+        mint === SOLANA_USDC_MINT || mint === JUPITER_LEND_USDC_MINT
+      const priceUsd = bestPair ? parseFloat(bestPair.priceUsd) : isStableDollarToken ? 1 : null
       const valueUsd = priceUsd !== null ? actualBalance * priceUsd : null
       const totalSupply = asset.token_info?.supply || 0
 
@@ -268,6 +272,7 @@ export async function getLiveHoldingsData(
         }))
 
       const usdcHolding = holdings.find((holding) => holding.mint === SOLANA_USDC_MINT)
+      const jlUsdcHolding = holdings.find((holding) => holding.mint === JUPITER_LEND_USDC_MINT)
       const selectedHoldingFull = selectedTokenMint
         ? allHoldings.find(
             (holding) =>
@@ -279,6 +284,9 @@ export async function getLiveHoldingsData(
         ? holdings.find((holding) => holding.mint === selectedTokenMint) || null
         : null
       const solUsdValue = (solBalance?.sol || 0) * solPriceUsd
+      const usdcUsdValue = usdcHolding?.valueUsd || 0
+      const jlUsdcUsdValue = jlUsdcHolding?.valueUsd || 0
+      const totalDollarValueUsd = solUsdValue + usdcUsdValue + jlUsdcUsdValue
       const trackedValueUsd = holdings.reduce(
         (sum, holding) => sum + (holding.valueUsd || 0),
         0
@@ -305,7 +313,10 @@ export async function getLiveHoldingsData(
         solLamports: solBalance?.lamports ?? null,
         solUsdValue,
         usdcBalance: usdcHolding ? usdcHolding.balance / Math.pow(10, 6) : 0,
-        usdcUsdValue: usdcHolding?.valueUsd || 0,
+        jlUsdcBalance: jlUsdcHolding ? jlUsdcHolding.balance / Math.pow(10, 6) : 0,
+        usdcUsdValue,
+        jlUsdcUsdValue,
+        totalDollarValueUsd,
         trackedValueUsd,
         totalWalletValueUsd: solUsdValue + trackedValueUsd,
         selectedTokenMint,
@@ -326,6 +337,14 @@ export async function getLiveHoldingsData(
   )
   const totalUsdcBalance = walletSummaries.reduce(
     (sum, wallet) => sum + wallet.usdcBalance,
+    0
+  )
+  const totalJlUsdcBalance = walletSummaries.reduce(
+    (sum, wallet) => sum + wallet.jlUsdcBalance,
+    0
+  )
+  const totalDollarValueUsd = walletSummaries.reduce(
+    (sum, wallet) => sum + wallet.totalDollarValueUsd,
     0
   )
   const totalSelectedTokenBalance = selectedAggregatedHolding
@@ -349,6 +368,8 @@ export async function getLiveHoldingsData(
     trackedTokenCount: effectiveTrackedTokens.length,
     totalSolBalance,
     totalUsdcBalance,
+    totalJlUsdcBalance,
+    totalDollarValueUsd,
     totalSelectedTokenBalance,
     totalSelectedTokenSupplyPercent,
     selectedTokenMint,

@@ -65,6 +65,56 @@ function reorderWalletSummaries(
   }, [])
 }
 
+function applyWalletSummaryPatch(
+  wallet: WalletHoldingSummary,
+  patch: {
+    label?: string | null
+    trade_status?: string | null
+    funding_source_label?: string | null
+    platform?: string | null
+    funded_at?: string | null
+    sort_order?: number | null
+  }
+) {
+  return {
+    ...wallet,
+    ...(patch.label !== undefined ? { walletLabel: patch.label } : {}),
+    ...(patch.trade_status !== undefined ? { tradeStatus: patch.trade_status } : {}),
+    ...(patch.funding_source_label !== undefined
+      ? { fundingSourceLabel: patch.funding_source_label }
+      : {}),
+    ...(patch.platform !== undefined ? { platform: patch.platform } : {}),
+    ...(patch.funded_at !== undefined ? { fundedAt: patch.funded_at } : {}),
+    ...(patch.sort_order !== undefined ? { sortOrder: patch.sort_order } : {}),
+  }
+}
+
+function patchWalletSummaries(
+  wallets: WalletHoldingSummary[],
+  walletId: string,
+  patch: {
+    label?: string | null
+    trade_status?: string | null
+    funding_source_label?: string | null
+    platform?: string | null
+    funded_at?: string | null
+    sort_order?: number | null
+  }
+) {
+  let changed = false
+
+  const nextWallets = wallets.map((wallet) => {
+    if (wallet.walletId !== walletId) {
+      return wallet
+    }
+
+    changed = true
+    return applyWalletSummaryPatch(wallet, patch)
+  })
+
+  return changed ? nextWallets : wallets
+}
+
 export default function WalletWorkbookPage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-background" />}>
@@ -133,6 +183,8 @@ function WalletWorkbookContent() {
   const walletSummaries = holdingsData?.walletSummaries || []
   const totalSol = holdingsData?.totalSolBalance || 0
   const totalUsdc = holdingsData?.totalUsdcBalance || 0
+  const totalJlUsdc = holdingsData?.totalJlUsdcBalance || 0
+  const totalDollarValueUsd = holdingsData?.totalDollarValueUsd || 0
   const totalSelectedTokenBalance = holdingsData?.totalSelectedTokenBalance || 0
   const totalSelectedTokenSupplyPercent = holdingsData?.totalSelectedTokenSupplyPercent
   const walletCount = holdingsData?.walletCount || 0
@@ -223,42 +275,79 @@ function WalletWorkbookContent() {
     ) => {
       if (!activeSheetId) return
 
-      await readApiResponse(
-        await fetch(`/api/sheets/${activeSheetId}/wallets/${walletId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...patch,
-            row_order: patch.sort_order,
-          }),
-        })
+      let previousData: HoldingsResponseData | undefined
+
+      await mutateHoldings(
+        (current) => {
+          previousData = current || undefined
+
+          if (!current) {
+            return current
+          }
+
+          return {
+            ...current,
+            walletSummaries: patchWalletSummaries(current.walletSummaries, walletId, patch),
+          }
+        },
+        {
+          revalidate: false,
+          populateCache: true,
+        }
       )
 
-      await mutateHoldings()
+      try {
+        await readApiResponse(
+          await fetch(`/api/sheets/${activeSheetId}/wallets/${walletId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...patch,
+              row_order: patch.sort_order,
+            }),
+          })
+        )
+      } catch (error) {
+        if (previousData) {
+          await mutateHoldings(previousData, {
+            revalidate: false,
+            populateCache: true,
+          })
+        }
+
+        toast.error(
+          error instanceof Error ? error.message : "Failed to update wallet row"
+        )
+      }
     },
     [activeSheetId, mutateHoldings]
   )
 
   const persistWalletOrder = useCallback(
     async (orderedWalletIds: string[]) => {
-      if (!activeSheetId || !holdingsData) {
+      if (!activeSheetId) {
         return
       }
 
-      const reorderedWallets = reorderWalletSummaries(
-        holdingsData.walletSummaries,
-        orderedWalletIds
-      )
-      const previousData = holdingsData
-      const nextData: HoldingsResponseData = {
-        ...holdingsData,
-        walletSummaries: reorderedWallets,
-      }
+      let previousData: HoldingsResponseData | undefined
 
-      await mutateHoldings(nextData, {
-        revalidate: false,
-        populateCache: true,
-      })
+      await mutateHoldings(
+        (current) => {
+          previousData = current || undefined
+          if (!current) {
+            return current
+          }
+
+          return {
+            ...current,
+            walletSummaries: reorderWalletSummaries(current.walletSummaries, orderedWalletIds),
+          }
+        },
+        {
+          revalidate: false,
+          populateCache: true,
+        }
+      )
 
       try {
         await readApiResponse(
@@ -269,14 +358,16 @@ function WalletWorkbookContent() {
           })
         )
       } catch (error) {
-        await mutateHoldings(previousData, {
-          revalidate: false,
-          populateCache: true,
-        })
+        if (previousData) {
+          await mutateHoldings(previousData, {
+            revalidate: false,
+            populateCache: true,
+          })
+        }
         throw error
       }
     },
-    [activeSheetId, holdingsData, mutateHoldings]
+    [activeSheetId, mutateHoldings]
   )
 
   const handleReorderWallets = useCallback(
@@ -546,7 +637,7 @@ function WalletWorkbookContent() {
                 Sheet Token Context
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                SOL and USDC always stay visible. The sheet token controls the amount and % supply columns.
+                SOL, USDC and jlUSDC always stay visible. The sheet token controls the amount and % supply columns.
               </p>
             </div>
 
@@ -582,7 +673,7 @@ function WalletWorkbookContent() {
           />
         </div>
 
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
           <StatsCard
             title="Total SOL"
             value={formatNumber(totalSol, {
@@ -600,6 +691,24 @@ function WalletWorkbookContent() {
             })}
             subtitle="Always loaded"
             icon={Coins}
+          />
+          <StatsCard
+            title="Total jlUSDC"
+            value={formatNumber(totalJlUsdc, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+            subtitle="Lending reserve"
+            icon={Coins}
+          />
+          <StatsCard
+            title="Total USD"
+            value={formatNumber(totalDollarValueUsd, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+            subtitle="SOL + USDC + jlUSDC"
+            icon={CircleDollarSign}
           />
           <StatsCard
             title={selectedTokenInfo ? `${selectedTokenInfo.symbol} Amount` : "Selected Token Amount"}

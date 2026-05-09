@@ -215,17 +215,10 @@ export const SortableWalletRow = memo(function SortableWalletRow({
         />
       </TableCell>
       <TableCell>
-        <Input
-          type="datetime-local"
-          value={formatFundedAtInputValue(wallet.fundedAt)}
-          onChange={(event) => {
-            if (wallet.walletId && onUpdateWallet) {
-              void onUpdateWallet(wallet.walletId, {
-                funded_at: event.target.value || null,
-              })
-            }
-          }}
-          className="h-8 min-w-[168px] border-border bg-transparent text-xs"
+        <WalletDateInput
+          walletId={wallet.walletId}
+          value={wallet.fundedAt}
+          onSave={onUpdateWallet}
         />
       </TableCell>
       <TableCell className="text-right font-mono">
@@ -233,6 +226,9 @@ export const SortableWalletRow = memo(function SortableWalletRow({
       </TableCell>
       <TableCell className="text-right font-mono">
         {formatUsdc(wallet.usdcBalance)}
+      </TableCell>
+      <TableCell className="text-right font-mono">
+        {formatUsdc(wallet.jlUsdcBalance)}
       </TableCell>
       <TableCell className="text-right font-mono font-medium">
         {selectedToken ? wallet.selectedTokenBalanceFormatted || "0" : "-"}
@@ -344,6 +340,56 @@ function WalletFieldSelect({
         ))}
       </SelectContent>
     </Select>
+  )
+}
+
+function WalletDateInput({
+  walletId,
+  value,
+  onSave,
+}: {
+  walletId: string | null
+  value: string | null
+  onSave?: (walletId: string, patch: WalletPatch) => Promise<void>
+}) {
+  const [draft, setDraft] = useState(formatFundedAtInputValue(value))
+
+  useEffect(() => {
+    setDraft(formatFundedAtInputValue(value))
+  }, [value])
+
+  const commit = useCallback(async () => {
+    if (!walletId || !onSave) {
+      return
+    }
+
+    const normalizedCurrent = formatFundedAtInputValue(value)
+    if (normalizedCurrent === draft) {
+      return
+    }
+
+    await onSave(walletId, {
+      funded_at: draft || null,
+    })
+  }, [draft, onSave, value, walletId])
+
+  return (
+    <Input
+      type="datetime-local"
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        void commit()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault()
+          void commit()
+          event.currentTarget.blur()
+        }
+      }}
+      className="h-8 min-w-[168px] border-border bg-transparent text-xs"
+    />
   )
 }
 

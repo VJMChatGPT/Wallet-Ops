@@ -227,7 +227,10 @@ export interface WalletHoldingSummary {
   solLamports: number | null
   solUsdValue: number
   usdcBalance: number
+  jlUsdcBalance: number
   usdcUsdValue: number
+  jlUsdcUsdValue: number
+  totalDollarValueUsd: number
   trackedValueUsd: number
   totalWalletValueUsd: number
   selectedTokenMint: string | null
@@ -266,6 +269,8 @@ export interface HoldingsResponseData {
   trackedTokenCount: number
   totalSolBalance: number
   totalUsdcBalance: number
+  totalJlUsdcBalance: number
+  totalDollarValueUsd: number
   totalSelectedTokenBalance: number
   totalSelectedTokenSupplyPercent: number | null
   selectedTokenMint: string | null

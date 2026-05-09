@@ -128,6 +128,7 @@ export function WalletBreakdown({
     () => ({
       totalSol: wallets.reduce((sum, wallet) => sum + (wallet.solBalance || 0), 0),
       totalUsdc: wallets.reduce((sum, wallet) => sum + wallet.usdcBalance, 0),
+      totalJlUsdc: wallets.reduce((sum, wallet) => sum + wallet.jlUsdcBalance, 0),
       totalSelectedToken: wallets.reduce(
         (sum, wallet) => sum + wallet.selectedTokenBalance,
         0
@@ -244,6 +245,7 @@ export function WalletBreakdown({
               <TableHead>Dia</TableHead>
               <TableHead className="text-right">SOL</TableHead>
               <TableHead className="text-right">USDC</TableHead>
+              <TableHead className="text-right">jlUSDC</TableHead>
               <TableHead className="text-right">
                 <div className="flex items-center justify-end gap-2">
                   <span>Selected Token</span>
@@ -309,6 +311,9 @@ export function WalletBreakdown({
               </TableCell>
               <TableCell className="text-right font-mono font-semibold">
                 {formatUsdc(totals.totalUsdc)}
+              </TableCell>
+              <TableCell className="text-right font-mono font-semibold">
+                {formatUsdc(totals.totalJlUsdc)}
               </TableCell>
               <TableCell className="text-right font-mono font-semibold">
                 {selectedToken
