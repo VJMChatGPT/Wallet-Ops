@@ -39,6 +39,9 @@ type WalletPatch = {
   funding_source_label?: string | null
   platform?: string | null
   funded_at?: string | null
+  planned_for_launch?: boolean
+  used_in_launch?: boolean
+  used_notes?: string | null
   sort_order?: number | null
 }
 
@@ -243,6 +246,8 @@ export function WalletBreakdown({
               <TableHead>Foundeada</TableHead>
               <TableHead>Plataforma</TableHead>
               <TableHead>Dia</TableHead>
+              <TableHead className="text-center">Planned</TableHead>
+              <TableHead className="text-center">Used</TableHead>
               <TableHead className="text-right">SOL</TableHead>
               <TableHead className="text-right">USDC</TableHead>
               <TableHead className="text-right">jlUSDC</TableHead>
@@ -301,6 +306,8 @@ export function WalletBreakdown({
               {selectable && <TableCell />}
               <TableCell />
               <TableCell className="font-semibold">Total</TableCell>
+              <TableCell />
+              <TableCell />
               <TableCell />
               <TableCell />
               <TableCell />

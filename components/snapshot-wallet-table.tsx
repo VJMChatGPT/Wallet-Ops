@@ -56,6 +56,8 @@ export function SnapshotWalletTable({
             <TableHead>Foundeada</TableHead>
             <TableHead>Plataforma</TableHead>
             <TableHead>Dia</TableHead>
+            <TableHead className="text-center">Planned</TableHead>
+            <TableHead className="text-center">Used</TableHead>
             <TableHead className="text-right">SOL</TableHead>
             <TableHead className="text-right">USDC</TableHead>
             <TableHead className="text-right">
@@ -91,19 +93,6 @@ export function SnapshotWalletTable({
               <TableCell>
                 <div className="space-y-1">
                   <SnapshotFieldBadge value={wallet.funding_source_label} />
-                  {wallet.first_funder_address && (
-                    <code className="block text-[10px] text-muted-foreground">
-                      <SolscanLink
-                        address={wallet.first_funder_address}
-                        label={shortAddress(wallet.first_funder_address)}
-                      />
-                    </code>
-                  )}
-                  {wallet.funding_label_source && (
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
-                      {wallet.funding_label_source}
-                    </p>
-                  )}
                 </div>
               </TableCell>
               <TableCell>
@@ -111,6 +100,20 @@ export function SnapshotWalletTable({
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
                 {formatFundedAtDisplay(wallet.funded_at)}
+              </TableCell>
+              <TableCell className="text-center">
+                {wallet.planned_for_launch ? (
+                  <Badge variant="secondary">Yes</Badge>
+                ) : (
+                  <Badge variant="outline">No</Badge>
+                )}
+              </TableCell>
+              <TableCell className="text-center">
+                {wallet.used_in_launch ? (
+                  <Badge variant="secondary">Yes</Badge>
+                ) : (
+                  <Badge variant="outline">No</Badge>
+                )}
               </TableCell>
               <TableCell className="text-right font-mono">
                 {formatNumber(Number(wallet.sol_balance || 0), {

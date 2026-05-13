@@ -17,6 +17,7 @@ import { getMergedSheetWallets, getOrCreateMasterSheet, getSheetById } from "@/l
 import type {
   AggregatedTokenHolding,
   HoldingsResponseData,
+  LaunchGroupSummary,
   TokenHolding,
   TrackedToken,
   WalletHoldingSummary,
@@ -26,6 +27,86 @@ import type {
 interface GetLiveHoldingsOptions {
   sheetId?: string | null
   tokenMint?: string | null
+}
+
+function createEmptyLaunchGroupSummary(): LaunchGroupSummary {
+  return {
+    planned: {
+      walletCount: 0,
+      totalSol: 0,
+      totalSelectedTokenBalance: 0,
+      totalSelectedTokenSupplyPercent: null,
+    },
+    used: {
+      walletCount: 0,
+      totalSol: 0,
+      totalSelectedTokenBalance: 0,
+      totalSelectedTokenSupplyPercent: null,
+    },
+    plannedAndUsed: {
+      walletCount: 0,
+      totalSol: 0,
+      totalSelectedTokenBalance: 0,
+      totalSelectedTokenSupplyPercent: null,
+    },
+    usedNotPlanned: {
+      walletCount: 0,
+      totalSol: 0,
+      totalSelectedTokenBalance: 0,
+      totalSelectedTokenSupplyPercent: null,
+    },
+    trackedButUnused: {
+      walletCount: 0,
+      totalSol: 0,
+      totalSelectedTokenBalance: 0,
+      totalSelectedTokenSupplyPercent: null,
+    },
+    allWallets: {
+      walletCount: 0,
+      totalSol: 0,
+      totalSelectedTokenBalance: 0,
+      totalSelectedTokenSupplyPercent: null,
+    },
+  }
+}
+
+function summarizeLaunchGroup(wallets: WalletHoldingSummary[]): LaunchGroupSummary {
+  const summarize = (entries: WalletHoldingSummary[]) => {
+    const totalSelectedTokenSupplyPercent = entries.reduce(
+      (sum, wallet) => sum + (wallet.selectedTokenSupplyPercent || 0),
+      0
+    )
+
+    return {
+      walletCount: entries.length,
+      totalSol: entries.reduce((sum, wallet) => sum + (wallet.solBalance || 0), 0),
+      totalSelectedTokenBalance: entries.reduce(
+        (sum, wallet) => sum + wallet.selectedTokenBalance,
+        0
+      ),
+      totalSelectedTokenSupplyPercent:
+        entries.length > 0 ? totalSelectedTokenSupplyPercent : null,
+    }
+  }
+
+  const planned = wallets.filter((wallet) => wallet.plannedForLaunch)
+  const used = wallets.filter((wallet) => wallet.usedInLaunch)
+  const plannedAndUsed = wallets.filter(
+    (wallet) => wallet.plannedForLaunch && wallet.usedInLaunch
+  )
+  const usedNotPlanned = wallets.filter(
+    (wallet) => wallet.usedInLaunch && !wallet.plannedForLaunch
+  )
+  const trackedButUnused = wallets.filter((wallet) => !wallet.usedInLaunch)
+
+  return {
+    planned: summarize(planned),
+    used: summarize(used),
+    plannedAndUsed: summarize(plannedAndUsed),
+    usedNotPlanned: summarize(usedNotPlanned),
+    trackedButUnused: summarize(trackedButUnused),
+    allWallets: summarize(wallets),
+  }
 }
 
 export async function getLiveHoldingsData(
@@ -81,6 +162,7 @@ export async function getLiveHoldingsData(
       totalDollarValueUsd: 0,
       totalSelectedTokenBalance: 0,
       totalSelectedTokenSupplyPercent: null,
+      launchSummary: createEmptyLaunchGroupSummary(),
       selectedTokenMint,
       selectedTokenSymbol: selectedTrackedToken?.symbol || sheet.token_symbol || null,
     }
@@ -309,6 +391,9 @@ export async function getLiveHoldingsData(
         fundedAt: wallet.funded_at,
         fundingDetectionMethod: wallet.funding_detection_method,
         fundingDetectedAt: wallet.funding_detected_at,
+        plannedForLaunch: wallet.planned_for_launch,
+        usedInLaunch: wallet.used_in_launch,
+        usedNotes: wallet.used_notes,
         solBalance: solBalance?.sol ?? null,
         solLamports: solBalance?.lamports ?? null,
         solUsdValue,
@@ -353,6 +438,7 @@ export async function getLiveHoldingsData(
     : 0
   const totalSelectedTokenSupplyPercent =
     selectedAggregatedHolding?.holdingsPercent ?? null
+  const launchSummary = summarizeLaunchGroup(walletSummaries)
   const portfolioTotalValueUsd = walletSummaries.reduce(
     (sum, wallet) => sum + wallet.totalWalletValueUsd,
     0
@@ -372,6 +458,7 @@ export async function getLiveHoldingsData(
     totalDollarValueUsd,
     totalSelectedTokenBalance,
     totalSelectedTokenSupplyPercent,
+    launchSummary,
     selectedTokenMint,
     selectedTokenSymbol:
       selectedAggregatedHolding?.symbol || selectedTrackedToken?.symbol || sheet.token_symbol || null,

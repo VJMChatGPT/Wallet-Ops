@@ -42,6 +42,9 @@ type WalletPatch = {
   funding_source_label?: string | null
   platform?: string | null
   funded_at?: string | null
+  planned_for_launch?: boolean
+  used_in_launch?: boolean
+  used_notes?: string | null
   sort_order?: number | null
 }
 
@@ -221,6 +224,28 @@ export const SortableWalletRow = memo(function SortableWalletRow({
           onSave={onUpdateWallet}
         />
       </TableCell>
+      <TableCell className="text-center">
+        <WalletFlagCheckbox
+          checked={wallet.plannedForLaunch}
+          label="Planned for launch"
+          onCheckedChange={(checked) =>
+            wallet.walletId && onUpdateWallet
+              ? onUpdateWallet(wallet.walletId, { planned_for_launch: checked })
+              : Promise.resolve()
+          }
+        />
+      </TableCell>
+      <TableCell className="text-center">
+        <WalletFlagCheckbox
+          checked={wallet.usedInLaunch}
+          label="Used in launch"
+          onCheckedChange={(checked) =>
+            wallet.walletId && onUpdateWallet
+              ? onUpdateWallet(wallet.walletId, { used_in_launch: checked })
+              : Promise.resolve()
+          }
+        />
+      </TableCell>
       <TableCell className="text-right font-mono">
         {formatSol(wallet.solBalance)}
       </TableCell>
@@ -390,6 +415,28 @@ function WalletDateInput({
       }}
       className="h-8 min-w-[168px] border-border bg-transparent text-xs"
     />
+  )
+}
+
+function WalletFlagCheckbox({
+  checked,
+  label,
+  onCheckedChange,
+}: {
+  checked: boolean
+  label: string
+  onCheckedChange: (checked: boolean) => Promise<void>
+}) {
+  return (
+    <div className="flex justify-center">
+      <Checkbox
+        checked={checked}
+        aria-label={label}
+        onCheckedChange={(value) => {
+          void onCheckedChange(Boolean(value))
+        }}
+      />
+    </div>
   )
 }
 

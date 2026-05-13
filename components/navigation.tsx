@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -26,9 +27,14 @@ export function Navigation({ onRefresh, isRefreshing }: NavigationProps) {
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-8">
             <Link href="/" className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                <span className="text-sm font-bold text-primary-foreground">W</span>
-              </div>
+              <Image
+                src="/Wallet_Ops_logo.png"
+                alt="Wallet Ops"
+                width={32}
+                height={32}
+                className="h-8 w-8 rounded-lg"
+                priority
+              />
               <span className="text-lg font-semibold tracking-tight">Wallet Ops</span>
             </Link>
             <nav className="hidden md:flex items-center gap-1">

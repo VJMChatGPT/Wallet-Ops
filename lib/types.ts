@@ -42,6 +42,9 @@ export interface SheetWallet {
   first_funder_address: string | null
   platform: string | null
   funded_at: string | null
+  planned_for_launch: boolean
+  used_in_launch: boolean
+  used_notes: string | null
   funding_detection_method: string | null
   funding_detected_at: string | null
   created_at: string
@@ -223,6 +226,9 @@ export interface WalletHoldingSummary {
   fundedAt: string | null
   fundingDetectionMethod: string | null
   fundingDetectedAt: string | null
+  plannedForLaunch: boolean
+  usedInLaunch: boolean
+  usedNotes: string | null
   solBalance: number | null
   solLamports: number | null
   solUsdValue: number
@@ -249,6 +255,22 @@ export interface WalletHoldingSummary {
   }[]
 }
 
+export interface LaunchGroupMetrics {
+  walletCount: number
+  totalSol: number
+  totalSelectedTokenBalance: number
+  totalSelectedTokenSupplyPercent: number | null
+}
+
+export interface LaunchGroupSummary {
+  planned: LaunchGroupMetrics
+  used: LaunchGroupMetrics
+  plannedAndUsed: LaunchGroupMetrics
+  usedNotPlanned: LaunchGroupMetrics
+  trackedButUnused: LaunchGroupMetrics
+  allWallets: LaunchGroupMetrics
+}
+
 export interface TokenWatchAlert {
   signature: string
   buyerAddress: string
@@ -273,6 +295,7 @@ export interface HoldingsResponseData {
   totalDollarValueUsd: number
   totalSelectedTokenBalance: number
   totalSelectedTokenSupplyPercent: number | null
+  launchSummary: LaunchGroupSummary
   selectedTokenMint: string | null
   selectedTokenSymbol: string | null
 }
@@ -288,8 +311,17 @@ export interface PortfolioSnapshot {
   selected_token_symbol: string | null
   total_sol_balance: number | string | null
   total_usdc_balance: number | string | null
+  total_sol_planned: number | string | null
+  total_sol_used: number | string | null
+  total_sol_used_not_planned: number | string | null
   total_selected_token_balance: number | string | null
+  total_selected_token_planned: number | string | null
+  total_selected_token_used: number | string | null
+  total_selected_token_used_not_planned: number | string | null
   total_selected_token_supply_percent: number | string | null
+  total_selected_token_supply_percent_planned: number | string | null
+  total_selected_token_supply_percent_used: number | string | null
+  total_selected_token_supply_percent_used_not_planned: number | string | null
   created_at: string
 }
 
@@ -308,6 +340,9 @@ export interface PortfolioSnapshotWallet {
   first_funder_address: string | null
   platform: string | null
   funded_at: string | null
+  planned_for_launch: boolean
+  used_in_launch: boolean
+  used_notes: string | null
   sol_balance: number | string | null
   usdc_balance: number | string | null
   sol_usd_value: number | string | null
@@ -330,6 +365,10 @@ export interface SnapshotWalletComparisonRow {
   walletAddress: string
   walletLabel: string | null
   walletType: string | null
+  startPlannedForLaunch: boolean
+  endPlannedForLaunch: boolean
+  startUsedInLaunch: boolean
+  endUsedInLaunch: boolean
   startTokenAmount: number
   startTokenSupplyPercent: number | null
   endTokenAmount: number
@@ -357,6 +396,24 @@ export interface SnapshotComparisonResponse {
   startTokenSupplyPercent: number | null
   endTokenSupplyPercent: number | null
   deltaTokenSupplyPercent: number | null
+  launchSummary: {
+    planned: LaunchGroupComparison
+    used: LaunchGroupComparison
+    usedNotPlanned: LaunchGroupComparison
+    allWallets: LaunchGroupComparison
+  }
   tokenMismatch: boolean
   wallets: SnapshotWalletComparisonRow[]
+}
+
+export interface LaunchGroupComparison {
+  startSol: number
+  endSol: number
+  deltaSol: number
+  startTokenAmount: number
+  endTokenAmount: number
+  deltaTokenAmount: number
+  startTokenSupplyPercent: number | null
+  endTokenSupplyPercent: number | null
+  deltaTokenSupplyPercent: number | null
 }

@@ -73,6 +73,9 @@ function applyWalletSummaryPatch(
     funding_source_label?: string | null
     platform?: string | null
     funded_at?: string | null
+    planned_for_launch?: boolean
+    used_in_launch?: boolean
+    used_notes?: string | null
     sort_order?: number | null
   }
 ) {
@@ -85,6 +88,11 @@ function applyWalletSummaryPatch(
       : {}),
     ...(patch.platform !== undefined ? { platform: patch.platform } : {}),
     ...(patch.funded_at !== undefined ? { fundedAt: patch.funded_at } : {}),
+    ...(patch.planned_for_launch !== undefined
+      ? { plannedForLaunch: patch.planned_for_launch }
+      : {}),
+    ...(patch.used_in_launch !== undefined ? { usedInLaunch: patch.used_in_launch } : {}),
+    ...(patch.used_notes !== undefined ? { usedNotes: patch.used_notes } : {}),
     ...(patch.sort_order !== undefined ? { sortOrder: patch.sort_order } : {}),
   }
 }
@@ -98,6 +106,9 @@ function patchWalletSummaries(
     funding_source_label?: string | null
     platform?: string | null
     funded_at?: string | null
+    planned_for_launch?: boolean
+    used_in_launch?: boolean
+    used_notes?: string | null
     sort_order?: number | null
   }
 ) {
@@ -120,6 +131,34 @@ export default function WalletWorkbookPage() {
     <Suspense fallback={<div className="min-h-screen bg-background" />}>
       <WalletWorkbookContent />
     </Suspense>
+  )
+}
+
+function LaunchMetricCard({
+  title,
+  value,
+  walletCount,
+  suffix,
+}: {
+  title: string
+  value: number
+  walletCount: number
+  suffix?: string
+}) {
+  return (
+    <div className="rounded-md border border-border/70 bg-muted/20 p-3">
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">{title}</p>
+      <p className="mt-2 text-lg font-semibold tracking-tight">
+        {formatNumber(value, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 6,
+        })}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {walletCount} wallet{walletCount !== 1 ? "s" : ""}
+        {suffix ? ` • ${suffix}` : ""}
+      </p>
+    </div>
   )
 }
 
@@ -187,6 +226,7 @@ function WalletWorkbookContent() {
   const totalDollarValueUsd = holdingsData?.totalDollarValueUsd || 0
   const totalSelectedTokenBalance = holdingsData?.totalSelectedTokenBalance || 0
   const totalSelectedTokenSupplyPercent = holdingsData?.totalSelectedTokenSupplyPercent
+  const launchSummary = holdingsData?.launchSummary
   const walletCount = holdingsData?.walletCount || 0
   const selectedTokenMint = activeSheet?.token_mint || null
   const selectedTokenInfo = selectedTokenMint
@@ -270,6 +310,9 @@ function WalletWorkbookContent() {
         funding_source_label?: string | null
         platform?: string | null
         funded_at?: string | null
+        planned_for_launch?: boolean
+        used_in_launch?: boolean
+        used_notes?: string | null
         sort_order?: number | null
       }
     ) => {
@@ -754,6 +797,70 @@ function WalletWorkbookContent() {
               </p>
             </div>
           </div>
+
+          {launchSummary && (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-lg border border-border bg-card p-4">
+                <h3 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                  SOL Groups
+                </h3>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <LaunchMetricCard
+                    title="Planned"
+                    value={launchSummary.planned.totalSol}
+                    walletCount={launchSummary.planned.walletCount}
+                  />
+                  <LaunchMetricCard
+                    title="Used"
+                    value={launchSummary.used.totalSol}
+                    walletCount={launchSummary.used.walletCount}
+                  />
+                  <LaunchMetricCard
+                    title="Used not planned"
+                    value={launchSummary.usedNotPlanned.totalSol}
+                    walletCount={launchSummary.usedNotPlanned.walletCount}
+                  />
+                  <LaunchMetricCard
+                    title="All wallets"
+                    value={launchSummary.allWallets.totalSol}
+                    walletCount={launchSummary.allWallets.walletCount}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border bg-card p-4">
+                <h3 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                  {selectedTokenInfo?.symbol || "Selected Token"} Groups
+                </h3>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <LaunchMetricCard
+                    title="Planned"
+                    value={launchSummary.planned.totalSelectedTokenBalance}
+                    walletCount={launchSummary.planned.walletCount}
+                    suffix={formatPercentValue(launchSummary.planned.totalSelectedTokenSupplyPercent)}
+                  />
+                  <LaunchMetricCard
+                    title="Used"
+                    value={launchSummary.used.totalSelectedTokenBalance}
+                    walletCount={launchSummary.used.walletCount}
+                    suffix={formatPercentValue(launchSummary.used.totalSelectedTokenSupplyPercent)}
+                  />
+                  <LaunchMetricCard
+                    title="Used not planned"
+                    value={launchSummary.usedNotPlanned.totalSelectedTokenBalance}
+                    walletCount={launchSummary.usedNotPlanned.walletCount}
+                    suffix={formatPercentValue(launchSummary.usedNotPlanned.totalSelectedTokenSupplyPercent)}
+                  />
+                  <LaunchMetricCard
+                    title="All wallets"
+                    value={launchSummary.allWallets.totalSelectedTokenBalance}
+                    walletCount={launchSummary.allWallets.walletCount}
+                    suffix={formatPercentValue(launchSummary.allWallets.totalSelectedTokenSupplyPercent)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <WalletBreakdown
             wallets={walletSummaries}

@@ -1,5 +1,6 @@
 import type {
   HoldingsResponseData,
+  LaunchGroupComparison,
   PortfolioSnapshot,
   PortfolioSnapshotDetail,
   PortfolioSnapshotWallet,
@@ -31,6 +32,9 @@ export function buildSnapshotWalletRows(walletSummaries: WalletHoldingSummary[])
     first_funder_address: wallet.firstFunderAddress,
     platform: wallet.platform,
     funded_at: wallet.fundedAt,
+    planned_for_launch: wallet.plannedForLaunch,
+    used_in_launch: wallet.usedInLaunch,
+    used_notes: wallet.usedNotes,
     sol_balance: wallet.solBalance ?? 0,
     usdc_balance: wallet.usdcBalance,
     sol_usd_value: wallet.solUsdValue,
@@ -53,10 +57,23 @@ export function buildSnapshotInsert(holdings: HoldingsResponseData, name: string
     wallet_count: holdings.walletSummaries.length,
     total_sol_balance: holdings.totalSolBalance,
     total_usdc_balance: holdings.totalUsdcBalance,
+    total_sol_planned: holdings.launchSummary.planned.totalSol,
+    total_sol_used: holdings.launchSummary.used.totalSol,
+    total_sol_used_not_planned: holdings.launchSummary.usedNotPlanned.totalSol,
     selected_token_mint: holdings.selectedTokenMint,
     selected_token_symbol: holdings.selectedTokenSymbol,
     total_selected_token_balance: holdings.totalSelectedTokenBalance,
+    total_selected_token_planned: holdings.launchSummary.planned.totalSelectedTokenBalance,
+    total_selected_token_used: holdings.launchSummary.used.totalSelectedTokenBalance,
+    total_selected_token_used_not_planned:
+      holdings.launchSummary.usedNotPlanned.totalSelectedTokenBalance,
     total_selected_token_supply_percent: holdings.totalSelectedTokenSupplyPercent,
+    total_selected_token_supply_percent_planned:
+      holdings.launchSummary.planned.totalSelectedTokenSupplyPercent,
+    total_selected_token_supply_percent_used:
+      holdings.launchSummary.used.totalSelectedTokenSupplyPercent,
+    total_selected_token_supply_percent_used_not_planned:
+      holdings.launchSummary.usedNotPlanned.totalSelectedTokenSupplyPercent,
   }
 }
 
@@ -69,11 +86,31 @@ export function normalizeSnapshot(snapshot: PortfolioSnapshot): PortfolioSnapsho
     wallet_count: Number(snapshot.wallet_count),
     total_sol_balance: toNumber(snapshot.total_sol_balance),
     total_usdc_balance: toNumber(snapshot.total_usdc_balance),
+    total_sol_planned: toNumber(snapshot.total_sol_planned),
+    total_sol_used: toNumber(snapshot.total_sol_used),
+    total_sol_used_not_planned: toNumber(snapshot.total_sol_used_not_planned),
+    total_selected_token_planned: toNumber(snapshot.total_selected_token_planned),
+    total_selected_token_used: toNumber(snapshot.total_selected_token_used),
+    total_selected_token_used_not_planned: toNumber(
+      snapshot.total_selected_token_used_not_planned
+    ),
     total_selected_token_balance: toNumber(snapshot.total_selected_token_balance),
     total_selected_token_supply_percent:
       snapshot.total_selected_token_supply_percent === null
         ? null
         : toNumber(snapshot.total_selected_token_supply_percent),
+    total_selected_token_supply_percent_planned:
+      snapshot.total_selected_token_supply_percent_planned === null
+        ? null
+        : toNumber(snapshot.total_selected_token_supply_percent_planned),
+    total_selected_token_supply_percent_used:
+      snapshot.total_selected_token_supply_percent_used === null
+        ? null
+        : toNumber(snapshot.total_selected_token_supply_percent_used),
+    total_selected_token_supply_percent_used_not_planned:
+      snapshot.total_selected_token_supply_percent_used_not_planned === null
+        ? null
+        : toNumber(snapshot.total_selected_token_supply_percent_used_not_planned),
   }
 }
 
@@ -93,6 +130,9 @@ export function normalizeSnapshotWallet(
     first_funder_address: wallet.first_funder_address ?? null,
     platform: wallet.platform ?? null,
     funded_at: wallet.funded_at ?? null,
+    planned_for_launch: Boolean(wallet.planned_for_launch),
+    used_in_launch: Boolean(wallet.used_in_launch),
+    used_notes: wallet.used_notes ?? null,
     sol_balance: toNumber(wallet.sol_balance),
     usdc_balance: toNumber(wallet.usdc_balance),
     sol_usd_value: toNumber(wallet.sol_usd_value),
@@ -125,6 +165,43 @@ export function compareSnapshots(
   fromWallets: PortfolioSnapshotWallet[],
   toWallets: PortfolioSnapshotWallet[]
 ): SnapshotComparisonResponse {
+  const buildLaunchGroupComparison = (input: {
+    startSol: number | string | null | undefined
+    endSol: number | string | null | undefined
+    startTokenAmount: number | string | null | undefined
+    endTokenAmount: number | string | null | undefined
+    startTokenSupplyPercent: number | string | null | undefined
+    endTokenSupplyPercent: number | string | null | undefined
+  }): LaunchGroupComparison => {
+    const startSol = toNumber(input.startSol)
+    const endSol = toNumber(input.endSol)
+    const startTokenAmount = toNumber(input.startTokenAmount)
+    const endTokenAmount = toNumber(input.endTokenAmount)
+    const normalizedStartSupply =
+      input.startTokenSupplyPercent === null || input.startTokenSupplyPercent === undefined
+        ? null
+        : toNumber(input.startTokenSupplyPercent)
+    const normalizedEndSupply =
+      input.endTokenSupplyPercent === null || input.endTokenSupplyPercent === undefined
+        ? null
+        : toNumber(input.endTokenSupplyPercent)
+
+    return {
+      startSol,
+      endSol,
+      deltaSol: endSol - startSol,
+      startTokenAmount,
+      endTokenAmount,
+      deltaTokenAmount: endTokenAmount - startTokenAmount,
+      startTokenSupplyPercent: normalizedStartSupply,
+      endTokenSupplyPercent: normalizedEndSupply,
+      deltaTokenSupplyPercent:
+        normalizedStartSupply !== null && normalizedEndSupply !== null
+          ? normalizedEndSupply - normalizedStartSupply
+          : null,
+    }
+  }
+
   const normalizedFrom = normalizeSnapshot(fromSnapshot)
   const normalizedTo = normalizeSnapshot(toSnapshot)
   const selectedTokenMint =
@@ -185,6 +262,10 @@ export function compareSnapshots(
       walletAddress: address,
       walletLabel: toWallet?.wallet_label || fromWallet?.wallet_label || null,
       walletType: toWallet?.wallet_type || fromWallet?.wallet_type || null,
+      startPlannedForLaunch: Boolean(fromWallet?.planned_for_launch),
+      endPlannedForLaunch: Boolean(toWallet?.planned_for_launch),
+      startUsedInLaunch: Boolean(fromWallet?.used_in_launch),
+      endUsedInLaunch: Boolean(toWallet?.used_in_launch),
       startTokenAmount,
       startTokenSupplyPercent,
       endTokenAmount,
@@ -218,6 +299,48 @@ export function compareSnapshots(
     startTokenSupplyPercent,
     endTokenSupplyPercent,
     deltaTokenSupplyPercent,
+    launchSummary: {
+      planned: buildLaunchGroupComparison({
+        startSol: normalizedFrom.total_sol_planned,
+        endSol: normalizedTo.total_sol_planned,
+        startTokenAmount: normalizedFrom.total_selected_token_planned,
+        endTokenAmount: normalizedTo.total_selected_token_planned,
+        startTokenSupplyPercent:
+          normalizedFrom.total_selected_token_supply_percent_planned,
+        endTokenSupplyPercent:
+          normalizedTo.total_selected_token_supply_percent_planned,
+      }),
+      used: buildLaunchGroupComparison({
+        startSol: normalizedFrom.total_sol_used,
+        endSol: normalizedTo.total_sol_used,
+        startTokenAmount: normalizedFrom.total_selected_token_used,
+        endTokenAmount: normalizedTo.total_selected_token_used,
+        startTokenSupplyPercent:
+          normalizedFrom.total_selected_token_supply_percent_used,
+        endTokenSupplyPercent:
+          normalizedTo.total_selected_token_supply_percent_used,
+      }),
+      usedNotPlanned: buildLaunchGroupComparison({
+        startSol: normalizedFrom.total_sol_used_not_planned,
+        endSol: normalizedTo.total_sol_used_not_planned,
+        startTokenAmount: normalizedFrom.total_selected_token_used_not_planned,
+        endTokenAmount: normalizedTo.total_selected_token_used_not_planned,
+        startTokenSupplyPercent:
+          normalizedFrom.total_selected_token_supply_percent_used_not_planned,
+        endTokenSupplyPercent:
+          normalizedTo.total_selected_token_supply_percent_used_not_planned,
+      }),
+      allWallets: buildLaunchGroupComparison({
+        startSol: normalizedFrom.total_sol_balance,
+        endSol: normalizedTo.total_sol_balance,
+        startTokenAmount: normalizedFrom.total_selected_token_balance,
+        endTokenAmount: normalizedTo.total_selected_token_balance,
+        startTokenSupplyPercent:
+          normalizedFrom.total_selected_token_supply_percent,
+        endTokenSupplyPercent:
+          normalizedTo.total_selected_token_supply_percent,
+      }),
+    },
     tokenMismatch,
     wallets,
   }

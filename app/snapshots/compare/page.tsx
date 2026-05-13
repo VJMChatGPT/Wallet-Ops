@@ -84,6 +84,7 @@ function SnapshotCompareContent() {
               startTokenSupplyPercent={data.startTokenSupplyPercent}
               endTokenSupplyPercent={data.endTokenSupplyPercent}
               deltaTokenSupplyPercent={data.deltaTokenSupplyPercent}
+              launchSummary={data.launchSummary}
             />
 
             <div className="rounded-lg border border-border bg-card p-4">

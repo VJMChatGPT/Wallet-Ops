@@ -51,6 +51,7 @@ export function SnapshotComparisonTable({
         <TableHeader>
           <TableRow className="border-border hover:bg-transparent">
             <TableHead>Wallet</TableHead>
+            <TableHead>Launch Flags</TableHead>
             <TableHead className="text-right">Start Amount</TableHead>
             <TableHead className="text-right">Start %</TableHead>
             <TableHead className="text-right">End Amount</TableHead>
@@ -84,6 +85,22 @@ export function SnapshotComparisonTable({
                         label={shortAddress(wallet.walletAddress)}
                       />
                     </code>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {wallet.endPlannedForLaunch && (
+                      <Badge variant="outline">Planned</Badge>
+                    )}
+                    {wallet.endUsedInLaunch && (
+                      <Badge variant="secondary">Used</Badge>
+                    )}
+                    {wallet.endUsedInLaunch && !wallet.endPlannedForLaunch && (
+                      <Badge variant="destructive">Used not planned</Badge>
+                    )}
+                    {!wallet.endPlannedForLaunch && !wallet.endUsedInLaunch && (
+                      <Badge variant="outline">Unused</Badge>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="text-right font-mono">

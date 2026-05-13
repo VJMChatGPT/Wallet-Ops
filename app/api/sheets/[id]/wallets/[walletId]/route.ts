@@ -25,6 +25,25 @@ function normalizeRowOrder(value: unknown) {
   return value
 }
 
+function normalizeBooleanField(value: unknown, fieldName: string) {
+  if (typeof value !== "boolean") {
+    throw new Error(`${fieldName} must be a boolean`)
+  }
+
+  return value
+}
+
+function normalizeUsedNotes(value: unknown) {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (typeof value !== "string") {
+    throw new Error("used_notes must be a string")
+  }
+
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string; walletId: string }> }
@@ -54,6 +73,25 @@ export async function PATCH(
         : {}),
       ...(body.funded_at !== undefined
         ? { funded_at: normalizeFundedAt(body.funded_at) }
+        : {}),
+      ...(body.planned_for_launch !== undefined
+        ? {
+            planned_for_launch: normalizeBooleanField(
+              body.planned_for_launch,
+              "planned_for_launch"
+            ),
+          }
+        : {}),
+      ...(body.used_in_launch !== undefined
+        ? {
+            used_in_launch: normalizeBooleanField(
+              body.used_in_launch,
+              "used_in_launch"
+            ),
+          }
+        : {}),
+      ...(body.used_notes !== undefined
+        ? { used_notes: normalizeUsedNotes(body.used_notes) }
         : {}),
       ...(body.row_order !== undefined
         ? { row_order: normalizeRowOrder(body.row_order) }

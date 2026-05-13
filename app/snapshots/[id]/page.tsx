@@ -18,6 +18,13 @@ function formatSupplyPercent(value: number | string | null | undefined) {
   return Number.isFinite(numericValue) ? `${numericValue.toFixed(4)}%` : "-"
 }
 
+function formatAmount(value: number | string | null | undefined, max = 6) {
+  return formatNumber(Number(value || 0), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: max,
+  })
+}
+
 export default function SnapshotDetailPage() {
   const params = useParams<{ id: string }>()
   const id = params.id
@@ -122,6 +129,60 @@ export default function SnapshotDetailPage() {
               </div>
             </div>
 
+            <div className="mb-8 grid gap-4 xl:grid-cols-2">
+              <div className="rounded-lg border border-border bg-card p-4">
+                <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                  SOL Groups
+                </h2>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <SnapshotGroupMetric
+                    title="Planned"
+                    value={data.snapshot.total_sol_planned}
+                  />
+                  <SnapshotGroupMetric
+                    title="Used"
+                    value={data.snapshot.total_sol_used}
+                  />
+                  <SnapshotGroupMetric
+                    title="Used not planned"
+                    value={data.snapshot.total_sol_used_not_planned}
+                  />
+                  <SnapshotGroupMetric
+                    title="All wallets"
+                    value={data.snapshot.total_sol_balance}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border bg-card p-4">
+                <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                  {data.snapshot.selected_token_symbol || "Selected Token"} Groups
+                </h2>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <SnapshotGroupMetric
+                    title="Planned"
+                    value={data.snapshot.total_selected_token_planned}
+                    suffix={formatSupplyPercent(data.snapshot.total_selected_token_supply_percent_planned)}
+                  />
+                  <SnapshotGroupMetric
+                    title="Used"
+                    value={data.snapshot.total_selected_token_used}
+                    suffix={formatSupplyPercent(data.snapshot.total_selected_token_supply_percent_used)}
+                  />
+                  <SnapshotGroupMetric
+                    title="Used not planned"
+                    value={data.snapshot.total_selected_token_used_not_planned}
+                    suffix={formatSupplyPercent(data.snapshot.total_selected_token_supply_percent_used_not_planned)}
+                  />
+                  <SnapshotGroupMetric
+                    title="All wallets"
+                    value={data.snapshot.total_selected_token_balance}
+                    suffix={formatSupplyPercent(data.snapshot.total_selected_token_supply_percent)}
+                  />
+                </div>
+              </div>
+            </div>
+
             <SnapshotWalletTable
               wallets={data.wallets}
               selectedTokenSymbol={data.snapshot.selected_token_symbol}
@@ -129,6 +190,24 @@ export default function SnapshotDetailPage() {
           </>
         ) : null}
       </main>
+    </div>
+  )
+}
+
+function SnapshotGroupMetric({
+  title,
+  value,
+  suffix,
+}: {
+  title: string
+  value: number | string | null | undefined
+  suffix?: string
+}) {
+  return (
+    <div className="rounded-md border border-border/70 bg-muted/20 p-3">
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">{title}</p>
+      <p className="mt-2 text-lg font-semibold tracking-tight">{formatAmount(value)}</p>
+      {suffix ? <p className="mt-1 text-xs text-muted-foreground">{suffix}</p> : null}
     </div>
   )
 }

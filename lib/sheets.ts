@@ -21,6 +21,9 @@ export interface MergedSheetWallet {
   first_funder_address: string | null
   platform: string | null
   funded_at: string | null
+  planned_for_launch: boolean
+  used_in_launch: boolean
+  used_notes: string | null
   funding_detection_method: string | null
   funding_detected_at: string | null
   created_at: string
@@ -127,6 +130,9 @@ export async function ensureMasterSheetWallets(supabase: SupabaseClientLike) {
       first_funder_address: wallet.first_funder_address,
       platform: wallet.platform,
       funded_at: wallet.funded_at,
+      planned_for_launch: false,
+      used_in_launch: false,
+      used_notes: null,
       funding_detection_method: wallet.funding_detection_method,
       funding_detected_at: wallet.funding_detected_at,
     }))
@@ -215,7 +221,7 @@ export async function getMergedSheetWallets(
   const { data, error } = await supabase
     .from("sheet_wallets")
     .select(
-      "id, sheet_id, wallet_id, row_order, label, trade_status, funding_source_label, funding_source_address, funding_label_source, first_funder_address, platform, funded_at, funding_detection_method, funding_detected_at, created_at, wallet:tracked_wallets(*)"
+      "id, sheet_id, wallet_id, row_order, label, trade_status, funding_source_label, funding_source_address, funding_label_source, first_funder_address, platform, funded_at, planned_for_launch, used_in_launch, used_notes, funding_detection_method, funding_detected_at, created_at, wallet:tracked_wallets(*)"
     )
     .eq("sheet_id", sheet.id)
     .order("row_order", { ascending: true })
@@ -253,6 +259,9 @@ export async function getMergedSheetWallets(
           row.first_funder_address ?? (isMasterSheet ? wallet.first_funder_address : null),
         platform: row.platform,
         funded_at: row.funded_at ?? (isMasterSheet ? wallet.funded_at : null),
+        planned_for_launch: row.planned_for_launch ?? false,
+        used_in_launch: row.used_in_launch ?? false,
+        used_notes: row.used_notes ?? null,
         funding_detection_method:
           row.funding_detection_method ??
           (isMasterSheet ? wallet.funding_detection_method : null),
@@ -301,6 +310,9 @@ export function buildSheetWalletInsert(row: MergedSheetWallet, sheetId: string, 
     first_funder_address: row.first_funder_address,
     platform: row.platform,
     funded_at: row.funded_at,
+    planned_for_launch: row.planned_for_launch,
+    used_in_launch: row.used_in_launch,
+    used_notes: row.used_notes,
     funding_detection_method: row.funding_detection_method,
     funding_detected_at: row.funding_detected_at,
   }
