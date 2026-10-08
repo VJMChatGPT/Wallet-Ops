@@ -14,20 +14,12 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { readApiResponse } from "@/lib/http"
-import type { TrackedToken, WorkbookSheet } from "@/lib/types"
+import type { WorkbookSheet } from "@/lib/types"
 
 interface CreateSheetDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  tokens: TrackedToken[]
   selectedWalletIds: string[]
   onCreated?: (sheet: WorkbookSheet) => void | Promise<void>
 }
@@ -35,18 +27,15 @@ interface CreateSheetDialogProps {
 export function CreateSheetDialog({
   open,
   onOpenChange,
-  tokens,
   selectedWalletIds,
   onCreated,
 }: CreateSheetDialogProps) {
   const [name, setName] = useState("")
-  const [tokenMint, setTokenMint] = useState<string>("none")
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     if (!open) {
       setName("")
-      setTokenMint("none")
     }
   }, [open])
 
@@ -55,15 +44,12 @@ export function CreateSheetDialog({
     setIsSubmitting(true)
 
     try {
-      const selectedToken = tokens.find((token) => token.mint === tokenMint)
       const result = await readApiResponse<{ sheet: WorkbookSheet }>(
         await fetch("/api/sheets", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name,
-            token_mint: tokenMint === "none" ? null : tokenMint,
-            token_symbol: selectedToken?.symbol || null,
             walletIds: selectedWalletIds,
           }),
         })
@@ -111,23 +97,6 @@ export function CreateSheetDialog({
                 onChange={(event) => setName(event.target.value)}
                 required
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="sheet-token">Sheet token</Label>
-              <Select value={tokenMint} onValueChange={setTokenMint}>
-                <SelectTrigger id="sheet-token">
-                  <SelectValue placeholder="No token assigned" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No token assigned</SelectItem>
-                  {tokens.map((token) => (
-                    <SelectItem key={token.mint} value={token.mint}>
-                      {token.symbol} - {token.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </div>
 

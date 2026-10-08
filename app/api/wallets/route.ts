@@ -18,6 +18,7 @@ interface WalletInput {
   address: string
   label?: string
   type?: WalletType
+  visible_in_workbook?: boolean
   sort_order?: number | null
   trade_status?: string | null
   funding_source_label?: string | null
@@ -243,6 +244,8 @@ export async function POST(request: Request) {
         address: normalizedAddress,
         label: normalizeLabel(label),
         type: normalizeWalletType(type),
+        visible_in_workbook:
+          body.visible_in_workbook === undefined ? true : Boolean(body.visible_in_workbook),
         sort_order: sortOrder,
         trade_status: normalizeTradeStatus(body.trade_status),
         funding_source_label: metadata.funding_source_label ?? null,
@@ -296,6 +299,7 @@ async function handleBulkCreate(
     address: string
     label: string | null
     type: WalletType
+    visible_in_workbook: boolean
     sort_order?: number | null
     trade_status: string | null
     funding_source_label: string | null
@@ -333,6 +337,8 @@ async function handleBulkCreate(
       address: normalizedAddress,
       label: normalizeLabel(wallet.label),
       type: normalizeWalletType(wallet.type),
+      visible_in_workbook:
+        wallet.visible_in_workbook === undefined ? true : Boolean(wallet.visible_in_workbook),
       trade_status: normalizeTradeStatus(wallet.trade_status),
       funding_source_label: normalizeFundingSourceLabel(
         wallet.funding_source_label
@@ -391,6 +397,7 @@ async function handleBulkCreate(
           address: wallet.address,
           label: wallet.label,
           type: wallet.type,
+          visible_in_workbook: wallet.visible_in_workbook,
           sort_order: nextSortOrder + index,
           trade_status: wallet.trade_status,
           funding_source_label: wallet.funding_source_label,
@@ -433,21 +440,36 @@ export async function DELETE(request: Request) {
     const supabase = await createClient()
     const { searchParams } = new URL(request.url)
     const id = searchParams.get("id")
+    const idsParam = searchParams.get("ids")
 
-    if (!id) {
+    const ids = idsParam
+      ? idsParam
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : id
+        ? [id]
+        : []
+
+    if (ids.length === 0) {
       return NextResponse.json(
         { error: "Wallet ID is required" },
         { status: 400 }
       )
     }
 
-    const { error } = await supabase.from("tracked_wallets").delete().eq("id", id)
+    const deleteQuery =
+      ids.length === 1
+        ? supabase.from("tracked_wallets").delete().eq("id", ids[0])
+        : supabase.from("tracked_wallets").delete().in("id", ids)
+
+    const { error } = await deleteQuery
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, deletedCount: ids.length })
   } catch (error) {
     return toErrorResponse(error)
   }

@@ -11,6 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -44,11 +45,13 @@ interface AddWalletDialogProps {
     address: string
     label: string
     type: WalletType
+    visible_in_workbook: boolean
   }) => Promise<void>
   onAddBulk: (wallets: {
     address: string
     label: string
     type: WalletType
+    visible_in_workbook: boolean
     lineNumber: number
   }[]) => Promise<{
     insertedCount: number
@@ -66,6 +69,7 @@ export function AddWalletDialog({
   const [address, setAddress] = useState("")
   const [label, setLabel] = useState("")
   const [type, setType] = useState<WalletType>("mine")
+  const [visibleInWorkbook, setVisibleInWorkbook] = useState(true)
   const [bulkInput, setBulkInput] = useState("")
   const [bulkLabels, setBulkLabels] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -146,6 +150,7 @@ export function AddWalletDialog({
     setAddress("")
     setLabel("")
     setType("mine")
+    setVisibleInWorkbook(true)
     setBulkInput("")
     setBulkLabels({})
     setError("")
@@ -189,6 +194,7 @@ export function AddWalletDialog({
         address: validation.normalizedAddress,
         label: label.trim(),
         type,
+        visible_in_workbook: visibleInWorkbook,
       })
       setOpen(false)
       resetState()
@@ -215,6 +221,7 @@ export function AddWalletDialog({
           address: entry.normalizedAddress!,
           label: entry.label.trim(),
           type,
+          visible_in_workbook: visibleInWorkbook,
           lineNumber: entry.lineNumber,
         }))
       )
@@ -264,7 +271,7 @@ export function AddWalletDialog({
           Add Wallet
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Add Wallets</DialogTitle>
           <DialogDescription>
@@ -329,6 +336,18 @@ export function AddWalletDialog({
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex items-center justify-between rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">Show in All Wallets table</p>
+                  <p className="text-xs text-muted-foreground">
+                    If disabled, this wallet stays hidden from the workbook table and only counts in totals.
+                  </p>
+                </div>
+                <Checkbox
+                  checked={visibleInWorkbook}
+                  onCheckedChange={(checked) => setVisibleInWorkbook(checked === true)}
+                />
+              </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
             <DialogFooter>
@@ -346,19 +365,32 @@ export function AddWalletDialog({
               <Label htmlFor="bulk-wallets">Wallets</Label>
               <Textarea
                 id="bulk-wallets"
-                placeholder={`Paste one Solana wallet per line\n6dPn8PveuYuWgHCWwzvjTVLJm4CUX7c9oezHG3PDNstc\n4eArCRfx31dBaT8XkpGJoandb5BpFFYjQuZ278rWLvvp`}
+                placeholder={`Paste one wallet per line\n6dPn8PveuYuWgHCWwzvjTVLJm4CUX7c9oezHG3PDNstc\n4eArCRfx31dBaT8XkpGJoandb5BpFFYjQuZ278rWLvvp\n\nOr include a name directly:\n6dPn8PveuYuWgHCWwzvjTVLJm4CUX7c9oezHG3PDNstc,Main wallet\n4eArCRfx31dBaT8XkpGJoandb5BpFFYjQuZ278rWLvvp,Sniper 02`}
                 value={bulkInput}
                 onChange={(e) => {
                   setBulkInput(e.target.value)
                   setBulkServerFailures([])
                 }}
-                className="min-h-40 font-mono text-sm"
+                spellCheck={false}
+                className="min-h-56 max-h-[45vh] resize-y overflow-y-auto font-mono text-xs leading-5 [field-sizing:fixed] sm:text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                One wallet per line. You can also paste `address,label`. Duplicates,
-                empty lines, other chains and invalid addresses are flagged before
-                import.
+                One wallet per line. You can also paste <span className="font-mono">address,label</span> and the
+                label will be filled in automatically. Duplicates, empty lines, other chains and invalid
+                addresses are flagged before import.
               </p>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">Show imported wallets in All Wallets</p>
+                <p className="text-xs text-muted-foreground">
+                  If disabled, imported wallets stay hidden from the workbook table and only count toward totals.
+                </p>
+              </div>
+              <Checkbox
+                checked={visibleInWorkbook}
+                onCheckedChange={(checked) => setVisibleInWorkbook(checked === true)}
+              />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">

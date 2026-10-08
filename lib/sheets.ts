@@ -12,6 +12,7 @@ export interface MergedSheetWallet {
   walletId: string
   address: string
   type: "mine" | "external"
+  visible_in_workbook: boolean
   label: string | null
   row_order: number
   trade_status: string | null
@@ -245,6 +246,7 @@ export async function getMergedSheetWallets(
         walletId: wallet.id,
         address: wallet.address,
         type: wallet.type,
+        visible_in_workbook: wallet.visible_in_workbook ?? true,
         label: row.label ?? (isMasterSheet ? wallet.label : null),
         row_order: row.row_order,
         trade_status: row.trade_status,

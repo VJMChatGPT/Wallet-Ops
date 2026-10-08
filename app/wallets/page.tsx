@@ -1,12 +1,13 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useMemo, useState } from "react"
 import useSWR from "swr"
 import { Navigation } from "@/components/navigation"
 import { WalletCard } from "@/components/wallet-card"
 import { AddWalletDialog } from "@/components/add-wallet-dialog"
+import { Button } from "@/components/ui/button"
 import type { TrackedWallet } from "@/lib/types"
-import { Wallet } from "lucide-react"
+import { Trash2, Wallet } from "lucide-react"
 
 async function readApiResponse(res: Response) {
   const text = await res.text()
@@ -39,6 +40,7 @@ const fetcher = async (url: string) =>
   (await readApiResponse(await fetch(url))) as TrackedWallet[]
 
 export default function WalletsPage() {
+  const [selectedWalletIds, setSelectedWalletIds] = useState<string[]>([])
   const { data: wallets, error, isLoading, mutate } = useSWR<TrackedWallet[]>(
     "/api/wallets",
     fetcher
@@ -49,10 +51,15 @@ export default function WalletsPage() {
     mutate()
   }, [mutate])
 
+  const clearSelection = useCallback(() => {
+    setSelectedWalletIds([])
+  }, [])
+
   const handleAddWallet = async (wallet: {
     address: string
     label: string
     type: "mine" | "external"
+    visible_in_workbook: boolean
   }) => {
     const response = await fetch("/api/wallets", {
       method: "POST",
@@ -70,6 +77,7 @@ export default function WalletsPage() {
       address: string
       label: string
       type: "mine" | "external"
+      visible_in_workbook: boolean
       lineNumber: number
     }[]
   ) => {
@@ -101,15 +109,47 @@ export default function WalletsPage() {
     mutate()
   }
 
+  const handleDeleteSelectedWallets = useCallback(async () => {
+    if (selectedWalletIds.length === 0) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${selectedWalletIds.length} selected wallet${
+        selectedWalletIds.length === 1 ? "" : "s"
+      }?`
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    const response = await fetch(
+      `/api/wallets?ids=${encodeURIComponent(selectedWalletIds.join(","))}`,
+      {
+        method: "DELETE",
+      }
+    )
+
+    await readApiResponse(response)
+    setSelectedWalletIds([])
+    mutate()
+  }, [mutate, selectedWalletIds])
+
   const handleUpdateWallet = async (wallet: {
     id: string
     address: string
     label: string
+    visible_in_workbook: boolean
   }) => {
-    const response = await fetch("/api/wallets", {
+    const response = await fetch(`/api/wallets/${wallet.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(wallet),
+      body: JSON.stringify({
+        address: wallet.address,
+        label: wallet.label,
+        visible_in_workbook: wallet.visible_in_workbook,
+      }),
     })
 
     await readApiResponse(response)
@@ -118,6 +158,21 @@ export default function WalletsPage() {
 
   const myWallets = walletList.filter((w) => w.type === "mine")
   const externalWallets = walletList.filter((w) => w.type === "external")
+  const allVisibleIds = useMemo(() => walletList.map((wallet) => wallet.id), [walletList])
+
+  const handleToggleSelected = useCallback((walletId: string, checked: boolean) => {
+    setSelectedWalletIds((current) => {
+      if (checked) {
+        return current.includes(walletId) ? current : [...current, walletId]
+      }
+
+      return current.filter((id) => id !== walletId)
+    })
+  }, [])
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedWalletIds(allVisibleIds)
+  }, [allVisibleIds])
 
   return (
     <div className="min-h-screen bg-background">
@@ -137,6 +192,30 @@ export default function WalletsPage() {
             onAddBulk={handleAddWalletsBulk}
           />
         </div>
+
+        {walletList.length > 0 && (
+          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-border/70 bg-card/60 p-3">
+            <p className="text-sm text-muted-foreground">
+              {selectedWalletIds.length} wallet{selectedWalletIds.length === 1 ? "" : "s"} selected
+            </p>
+            <Button variant="outline" size="sm" onClick={handleSelectAll}>
+              Select all
+            </Button>
+            <Button variant="outline" size="sm" onClick={clearSelection}>
+              Clear
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => void handleDeleteSelectedWallets()}
+              disabled={selectedWalletIds.length === 0}
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete selected
+            </Button>
+          </div>
+        )}
 
         {error && (
           <div className="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
@@ -173,6 +252,9 @@ export default function WalletsPage() {
                       existingAddresses={walletList.map((entry) => entry.address)}
                       onUpdate={handleUpdateWallet}
                       onDelete={handleDeleteWallet}
+                      selectable
+                      selected={selectedWalletIds.includes(wallet.id)}
+                      onToggleSelected={handleToggleSelected}
                     />
                   ))}
                 </div>
@@ -190,6 +272,9 @@ export default function WalletsPage() {
                       existingAddresses={walletList.map((entry) => entry.address)}
                       onUpdate={handleUpdateWallet}
                       onDelete={handleDeleteWallet}
+                      selectable
+                      selected={selectedWalletIds.includes(wallet.id)}
+                      onToggleSelected={handleToggleSelected}
                     />
                   ))}
                 </div>

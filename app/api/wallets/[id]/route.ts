@@ -99,6 +99,9 @@ export async function PATCH(
     const updatePayload = {
       ...(normalizedAddress ? { address: normalizedAddress } : {}),
       ...(body.label !== undefined ? { label: normalizeLabel(body.label) } : {}),
+      ...(body.visible_in_workbook !== undefined
+        ? { visible_in_workbook: Boolean(body.visible_in_workbook) }
+        : {}),
       ...(body.sort_order !== undefined
         ? { sort_order: normalizeSortOrder(body.sort_order) }
         : {}),

@@ -10,7 +10,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { WorkbookSheetWithWalletCount } from "@/lib/types"
 
@@ -61,14 +60,9 @@ export function WorkbookTabs({
                   className="flex items-center gap-2 text-sm font-medium"
                 >
                   <span>{sheet.name}</span>
-                  {sheet.token_symbol && (
-                    <Badge variant="outline" className="font-mono text-[10px]">
-                      {sheet.token_symbol}
-                    </Badge>
-                  )}
-                  <Badge variant="secondary" className="text-[10px]">
+                  <span className="inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground">
                     {sheet.wallet_count}
-                  </Badge>
+                  </span>
                 </button>
 
                 <DropdownMenu>

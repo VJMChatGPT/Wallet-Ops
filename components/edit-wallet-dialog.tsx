@@ -11,6 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { validateSolanaWalletAddress } from "@/lib/solana"
@@ -20,7 +21,12 @@ import { Pencil } from "lucide-react"
 interface EditWalletDialogProps {
   wallet: TrackedWallet
   existingAddresses?: string[]
-  onSave: (wallet: { id: string; address: string; label: string }) => Promise<void>
+  onSave: (wallet: {
+    id: string
+    address: string
+    label: string
+    visible_in_workbook: boolean
+  }) => Promise<void>
 }
 
 export function EditWalletDialog({
@@ -31,12 +37,16 @@ export function EditWalletDialog({
   const [open, setOpen] = useState(false)
   const [address, setAddress] = useState(wallet.address)
   const [label, setLabel] = useState(wallet.label || "")
+  const [visibleInWorkbook, setVisibleInWorkbook] = useState(
+    wallet.visible_in_workbook !== false
+  )
   const [error, setError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const resetState = () => {
     setAddress(wallet.address)
     setLabel(wallet.label || "")
+    setVisibleInWorkbook(wallet.visible_in_workbook !== false)
     setError("")
   }
 
@@ -64,6 +74,7 @@ export function EditWalletDialog({
         id: wallet.id,
         address: validation.normalizedAddress,
         label: label.trim(),
+        visible_in_workbook: visibleInWorkbook,
       })
       setOpen(false)
     } catch (err) {
@@ -113,6 +124,18 @@ export function EditWalletDialog({
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder="Optional wallet name"
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">Show in All Wallets table</p>
+                <p className="text-xs text-muted-foreground">
+                  Hidden wallets stay out of the workbook table but still count in totals.
+                </p>
+              </div>
+              <Checkbox
+                checked={visibleInWorkbook}
+                onCheckedChange={(checked) => setVisibleInWorkbook(checked === true)}
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}

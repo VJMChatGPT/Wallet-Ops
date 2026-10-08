@@ -51,6 +51,7 @@ type WalletPatch = {
 interface SortableWalletRowProps {
   wallet: WalletHoldingSummary
   selectedToken: string | null
+  showSelectedTokenColumns?: boolean
   selectable?: boolean
   selected?: boolean
   onToggleWallet?: (walletId: string, checked: boolean) => void
@@ -90,6 +91,7 @@ function formatSupplyPercent(value: number | null | undefined) {
 export const SortableWalletRow = memo(function SortableWalletRow({
   wallet,
   selectedToken,
+  showSelectedTokenColumns = true,
   selectable,
   selected,
   onToggleWallet,
@@ -255,12 +257,16 @@ export const SortableWalletRow = memo(function SortableWalletRow({
       <TableCell className="text-right font-mono">
         {formatUsdc(wallet.jlUsdcBalance)}
       </TableCell>
-      <TableCell className="text-right font-mono font-medium">
-        {selectedToken ? wallet.selectedTokenBalanceFormatted || "0" : "-"}
-      </TableCell>
-      <TableCell className="text-right font-mono font-semibold text-primary">
-        {selectedToken ? formatSupplyPercent(wallet.selectedTokenSupplyPercent) : "-"}
-      </TableCell>
+      {showSelectedTokenColumns && (
+        <TableCell className="text-right font-mono font-medium">
+          {selectedToken ? wallet.selectedTokenBalanceFormatted || "0" : "-"}
+        </TableCell>
+      )}
+      {showSelectedTokenColumns && (
+        <TableCell className="text-right font-mono font-semibold text-primary">
+          {selectedToken ? formatSupplyPercent(wallet.selectedTokenSupplyPercent) : "-"}
+        </TableCell>
+      )}
       {(onMoveWallet || onRemoveWallet) && (
         <TableCell className="w-[56px] text-right">
           <RowActionsMenu
@@ -506,12 +512,14 @@ interface WalletRowOverlayProps {
   wallet: WalletHoldingSummary
   selectedToken: string | null
   selectedTokenSymbol?: string
+  showSelectedTokenColumns?: boolean
 }
 
 export function WalletRowOverlay({
   wallet,
   selectedToken,
   selectedTokenSymbol,
+  showSelectedTokenColumns = true,
 }: WalletRowOverlayProps) {
   return (
     <div className="flex min-w-[720px] items-center gap-4 rounded-md border border-primary/40 bg-card px-4 py-3 shadow-2xl">
@@ -538,8 +546,10 @@ export function WalletRowOverlay({
         </Badge>
       </div>
       <div className="ml-auto text-right font-mono text-sm">
-        {selectedToken ? wallet.selectedTokenBalanceFormatted || "0" : formatSol(wallet.solBalance)}
-        {selectedToken && selectedTokenSymbol ? (
+        {showSelectedTokenColumns && selectedToken
+          ? wallet.selectedTokenBalanceFormatted || "0"
+          : formatSol(wallet.solBalance)}
+        {showSelectedTokenColumns && selectedToken && selectedTokenSymbol ? (
           <span className="ml-2 text-xs text-muted-foreground">{selectedTokenSymbol}</span>
         ) : null}
       </div>

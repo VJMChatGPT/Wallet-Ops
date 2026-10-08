@@ -3,7 +3,7 @@ import {
   getAssetMint,
   getBestPair,
   getTokensFromDexScreener,
-  getWalletSolBalance,
+  getWalletSolBalances,
   getWalletTokenBalances,
 } from "@/lib/api"
 import {
@@ -27,6 +27,33 @@ import type {
 interface GetLiveHoldingsOptions {
   sheetId?: string | null
   tokenMint?: string | null
+}
+
+async function mapWithConcurrency<T, R>(
+  entries: T[],
+  limit: number,
+  mapper: (entry: T) => Promise<R>
+) {
+  const results = new Array<R>(entries.length)
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < entries.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await mapper(entries[index])
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, entries.length) }, () => worker())
+  )
+
+  return results
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function createEmptyLaunchGroupSummary(): LaunchGroupSummary {
@@ -174,19 +201,24 @@ export async function getLiveHoldingsData(
   }
 
   const allHoldings: TokenHolding[] = []
-  const walletBalances = await Promise.all(
-    wallets.map(async (wallet) => {
-      const [assets, solBalance] = await Promise.all([
-        getWalletTokenBalances(wallet.address),
-        getWalletSolBalance(wallet.address),
-      ])
+  const solBalancesByWallet = await getWalletSolBalances(
+    wallets.map((wallet) => wallet.address)
+  )
+  const walletBalances = await mapWithConcurrency(
+    wallets,
+    1,
+    async (wallet) => {
+      const assets = await getWalletTokenBalances(wallet.address)
+      // Helius rate-limits DAS requests more aggressively than native RPC requests.
+      // This view is manually refreshed, so accurate results are preferable to a burst.
+      await wait(160)
 
       return {
         wallet,
         assets,
-        solBalance,
+        solBalance: solBalancesByWallet.get(wallet.address) ?? null,
       }
-    })
+    }
   )
 
   const dexData = await getTokensFromDexScreener([
@@ -336,7 +368,7 @@ export async function getLiveHoldingsData(
     ? aggregated.find((token) => token.mint === selectedTokenMint) || null
     : null
 
-  const walletSummaries: WalletHoldingSummary[] = walletBalances.map(
+  const allWalletSummaries: WalletHoldingSummary[] = walletBalances.map(
     ({ wallet, solBalance }) => {
       const holdings = allHoldings
         .filter((holding) => holding.walletAddress === wallet.address)
@@ -416,19 +448,27 @@ export async function getLiveHoldingsData(
     }
   )
 
-  const totalSolBalance = walletSummaries.reduce(
+  const visibleWalletSummaries =
+    sheet.type === "master"
+      ? allWalletSummaries.filter((wallet) => {
+          const source = wallets.find((entry) => entry.walletId === wallet.walletId)
+          return source?.visible_in_workbook !== false
+        })
+      : allWalletSummaries
+
+  const totalSolBalance = allWalletSummaries.reduce(
     (sum, wallet) => sum + (wallet.solBalance || 0),
     0
   )
-  const totalUsdcBalance = walletSummaries.reduce(
+  const totalUsdcBalance = allWalletSummaries.reduce(
     (sum, wallet) => sum + wallet.usdcBalance,
     0
   )
-  const totalJlUsdcBalance = walletSummaries.reduce(
+  const totalJlUsdcBalance = allWalletSummaries.reduce(
     (sum, wallet) => sum + wallet.jlUsdcBalance,
     0
   )
-  const totalDollarValueUsd = walletSummaries.reduce(
+  const totalDollarValueUsd = allWalletSummaries.reduce(
     (sum, wallet) => sum + wallet.totalDollarValueUsd,
     0
   )
@@ -438,8 +478,8 @@ export async function getLiveHoldingsData(
     : 0
   const totalSelectedTokenSupplyPercent =
     selectedAggregatedHolding?.holdingsPercent ?? null
-  const launchSummary = summarizeLaunchGroup(walletSummaries)
-  const portfolioTotalValueUsd = walletSummaries.reduce(
+  const launchSummary = summarizeLaunchGroup(allWalletSummaries)
+  const portfolioTotalValueUsd = allWalletSummaries.reduce(
     (sum, wallet) => sum + wallet.totalWalletValueUsd,
     0
   )
@@ -448,9 +488,9 @@ export async function getLiveHoldingsData(
     sheet,
     holdings: allHoldings,
     aggregated,
-    walletSummaries,
+    walletSummaries: visibleWalletSummaries,
     totalValueUsd: portfolioTotalValueUsd,
-    walletCount: walletSummaries.length,
+    walletCount: visibleWalletSummaries.length,
     trackedTokenCount: effectiveTrackedTokens.length,
     totalSolBalance,
     totalUsdcBalance,

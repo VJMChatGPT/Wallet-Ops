@@ -49,6 +49,7 @@ interface WalletBreakdownProps {
   wallets: WalletHoldingSummary[]
   selectedToken: string | null
   selectedTokenSymbol?: string
+  showSelectedTokenColumns?: boolean
   isLoading?: boolean
   emptyMessage?: string
   selectable?: boolean
@@ -90,6 +91,7 @@ export function WalletBreakdown({
   wallets,
   selectedToken,
   selectedTokenSymbol,
+  showSelectedTokenColumns = true,
   isLoading,
   emptyMessage,
   selectable,
@@ -132,10 +134,7 @@ export function WalletBreakdown({
       totalSol: wallets.reduce((sum, wallet) => sum + (wallet.solBalance || 0), 0),
       totalUsdc: wallets.reduce((sum, wallet) => sum + wallet.usdcBalance, 0),
       totalJlUsdc: wallets.reduce((sum, wallet) => sum + wallet.jlUsdcBalance, 0),
-      totalSelectedToken: wallets.reduce(
-        (sum, wallet) => sum + wallet.selectedTokenBalance,
-        0
-      ),
+      totalSelectedToken: wallets.reduce((sum, wallet) => sum + wallet.selectedTokenBalance, 0),
       totalSelectedTokenSupplyPercent: wallets.reduce(
         (sum, wallet) => sum + (wallet.selectedTokenSupplyPercent || 0),
         0
@@ -251,17 +250,19 @@ export function WalletBreakdown({
               <TableHead className="text-right">SOL</TableHead>
               <TableHead className="text-right">USDC</TableHead>
               <TableHead className="text-right">jlUSDC</TableHead>
-              <TableHead className="text-right">
-                <div className="flex items-center justify-end gap-2">
-                  <span>Selected Token</span>
-                  {selectedTokenSymbol && (
-                    <Badge variant="outline" className="font-mono text-[10px]">
-                      {selectedTokenSymbol}
-                    </Badge>
-                  )}
-                </div>
-              </TableHead>
-              <TableHead className="text-right">% Supply</TableHead>
+              {showSelectedTokenColumns && (
+                <TableHead className="text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <span>Selected Token</span>
+                    {selectedTokenSymbol && (
+                      <Badge variant="outline" className="font-mono text-[10px]">
+                        {selectedTokenSymbol}
+                      </Badge>
+                    )}
+                  </div>
+                </TableHead>
+              )}
+              {showSelectedTokenColumns && <TableHead className="text-right">% Supply</TableHead>}
               {(onMoveWallet || onRemoveWallet) && <TableHead className="w-[60px]" />}
             </TableRow>
           </TableHeader>
@@ -288,6 +289,7 @@ export function WalletBreakdown({
                     key={rowId}
                     wallet={wallet}
                     selectedToken={selectedToken}
+                    showSelectedTokenColumns={showSelectedTokenColumns}
                     selectable={selectable}
                     selected={wallet.walletId ? walletIdSet.has(wallet.walletId) : false}
                     onToggleWallet={onToggleWallet}
@@ -322,17 +324,21 @@ export function WalletBreakdown({
               <TableCell className="text-right font-mono font-semibold">
                 {formatUsdc(totals.totalJlUsdc)}
               </TableCell>
-              <TableCell className="text-right font-mono font-semibold">
-                {selectedToken
-                  ? formatNumber(totals.totalSelectedToken, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })
-                  : "-"}
-              </TableCell>
-              <TableCell className="text-right font-mono font-semibold text-primary">
-                {selectedToken ? formatSupplyPercent(totals.totalSelectedTokenSupplyPercent) : "-"}
-              </TableCell>
+              {showSelectedTokenColumns && (
+                <TableCell className="text-right font-mono font-semibold">
+                  {selectedToken
+                    ? formatNumber(totals.totalSelectedToken, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 6,
+                      })
+                    : "-"}
+                </TableCell>
+              )}
+              {showSelectedTokenColumns && (
+                <TableCell className="text-right font-mono font-semibold text-primary">
+                  {selectedToken ? formatSupplyPercent(totals.totalSelectedTokenSupplyPercent) : "-"}
+                </TableCell>
+              )}
               {(onMoveWallet || onRemoveWallet) && <TableCell />}
             </TableRow>
           </TableBody>

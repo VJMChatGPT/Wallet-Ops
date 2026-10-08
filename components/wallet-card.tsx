@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { SolscanLink } from "@/components/solscan-link"
 import { Copy, ExternalLink, Trash2 } from "lucide-react"
 import type { TrackedWallet } from "@/lib/types"
@@ -12,8 +13,16 @@ import { EditWalletDialog } from "@/components/edit-wallet-dialog"
 interface WalletCardProps {
   wallet: TrackedWallet
   existingAddresses?: string[]
-  onUpdate?: (wallet: { id: string; address: string; label: string }) => Promise<void>
+  onUpdate?: (wallet: {
+    id: string
+    address: string
+    label: string
+    visible_in_workbook: boolean
+  }) => Promise<void>
   onDelete?: (id: string) => void
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelected?: (id: string, checked: boolean) => void
   isDeleting?: boolean
 }
 
@@ -22,6 +31,9 @@ export function WalletCard({
   existingAddresses = [],
   onUpdate,
   onDelete,
+  selectable = false,
+  selected = false,
+  onToggleSelected,
   isDeleting,
 }: WalletCardProps) {
   const copyAddress = () => {
@@ -36,6 +48,14 @@ export function WalletCard({
     <Card className="bg-card border-border">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
+          <div className="flex items-start gap-3">
+            {selectable ? (
+              <Checkbox
+                checked={selected}
+                onCheckedChange={(checked) => onToggleSelected?.(wallet.id, checked === true)}
+                className="mt-1"
+              />
+            ) : null}
           <div className="space-y-1">
             <CardTitle className="text-base font-semibold">
               {wallet.label || "Unnamed Wallet"}
@@ -49,6 +69,7 @@ export function WalletCard({
             >
               {wallet.type === "mine" ? "My Wallet" : "External"}
             </Badge>
+          </div>
           </div>
           <div className="flex items-center gap-1">
             {onUpdate && (

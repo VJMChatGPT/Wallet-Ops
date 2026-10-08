@@ -5,6 +5,14 @@ export interface TrackedWallet {
   label: string | null
   type: "mine" | "external"
   sort_order: number | null
+  visible_in_workbook: boolean
+  eligible_for_rotation: boolean
+  last_used_at: string | null
+  times_used: number
+  last_launch_id: string | null
+  last_launch_name: string | null
+  active: boolean
+  notes: string | null
   trade_status: string | null
   funding_source_label: string | null
   funding_source_address: string | null
@@ -416,4 +424,109 @@ export interface LaunchGroupComparison {
   startTokenSupplyPercent: number | null
   endTokenSupplyPercent: number | null
   deltaTokenSupplyPercent: number | null
+}
+
+export type LaunchSelectionMode =
+  | "manual"
+  | "automatic_rotation"
+  | "least_recently_used"
+  | "weighted_random"
+
+export interface LaunchPlan {
+  id: string
+  name: string | null
+  previous_sheet_id: string | null
+  previous_sheet_name: string | null
+  token_mint: string | null
+  token_symbol: string | null
+  selection_mode: LaunchSelectionMode
+  desired_wallet_count: number
+  exclude_previous_launch: boolean
+  prefer_lower_historical_usage: boolean
+  randomness_factor: number
+  target_total_sol: number | null
+  min_sol: number | null
+  max_sol: number | null
+  variance_config: {
+    allowedVariance: number | null
+  } | null
+  reserve_floor: number | null
+  excluded_wallet_ids: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface LaunchPlanWallet {
+  id: string
+  launch_plan_id: string
+  wallet_id: string
+  role: "selected" | "non_selected" | "previous_launch" | "source" | "destination"
+  current_sol: number | null
+  target_sol: number | null
+  deficit_sol: number | null
+  surplus_sol: number | null
+  was_used_in_previous_launch: boolean
+  selected_for_next_launch: boolean
+  selection_reason: string | null
+  historical_times_used: number
+  historical_last_used_at: string | null
+  created_at: string
+}
+
+export interface LaunchPlanTransfer {
+  id: string
+  launch_plan_id: string
+  source_wallet_id: string
+  destination_wallet_id: string
+  amount_sol: number
+  source_before: number | null
+  source_after: number | null
+  destination_before: number | null
+  destination_after: number | null
+  reason: string | null
+  created_at: string
+}
+
+export interface LaunchPlanWalletView extends LaunchPlanWallet {
+  walletAddress: string
+  walletLabel: string | null
+  walletType: "mine" | "external"
+  eligibleForRotation: boolean
+  active: boolean
+  tradeStatus: string | null
+  fundingSourceLabel: string | null
+  platform: string | null
+  fundedAt: string | null
+  selectedTokenBalance: number
+  selectedTokenSupplyPercent: number | null
+}
+
+export interface LaunchPlannerSelectionSummary {
+  totalWalletsSelected: number
+  totalCurrentSolSelected: number
+  totalCurrentSolPreviousLaunch: number
+  derivedAverageSolPerSelected: number
+  targetTotalSolNeeded: number
+  currentTotalDeficit: number
+  walletsBelowTarget: number
+  proposedTransfers: number
+  totalSelectedTokenPlanned: number
+  totalSelectedTokenUsed: number
+  totalSelectedTokenUsedNotPlanned: number
+  totalSelectedTokenAllWallets: number
+  totalSelectedTokenSupplyPercentPlanned: number | null
+  totalSelectedTokenSupplyPercentUsed: number | null
+  totalSelectedTokenSupplyPercentUsedNotPlanned: number | null
+  totalSelectedTokenSupplyPercentAllWallets: number | null
+  totalSolPlanned: number
+  totalSolUsed: number
+  totalSolUsedNotPlanned: number
+  totalSolAllWallets: number
+}
+
+export interface LaunchPlannerDetail {
+  plan: LaunchPlan
+  wallets: LaunchPlanWalletView[]
+  transfers: LaunchPlanTransfer[]
+  summary: LaunchPlannerSelectionSummary
 }

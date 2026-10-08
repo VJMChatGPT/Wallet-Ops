@@ -4,20 +4,25 @@ import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, RefreshCw, Coins, Camera } from "lucide-react"
+import { LayoutDashboard, RefreshCw, Camera, Shuffle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface NavigationProps {
   onRefresh?: () => void
   isRefreshing?: boolean
+  logoSrc?: string
 }
 
-export function Navigation({ onRefresh, isRefreshing }: NavigationProps) {
+export function Navigation({
+  onRefresh,
+  isRefreshing,
+  logoSrc = "/Wallet_Ops_logo.png",
+}: NavigationProps) {
   const pathname = usePathname()
 
   const links = [
     { href: "/", label: "Workbook", icon: LayoutDashboard },
-    { href: "/tokens", label: "Tokens", icon: Coins },
+    { href: "/launch-planner", label: "Launch Planner", icon: Shuffle },
     { href: "/snapshots", label: "Snapshots", icon: Camera },
   ]
 
@@ -28,7 +33,7 @@ export function Navigation({ onRefresh, isRefreshing }: NavigationProps) {
           <div className="flex items-center gap-8">
             <Link href="/" className="flex items-center gap-2">
               <Image
-                src="/Wallet_Ops_logo.png"
+                src={logoSrc}
                 alt="Wallet Ops"
                 width={32}
                 height={32}

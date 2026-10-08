@@ -10,52 +10,81 @@ const HELIUS_API_KEY = process.env.HELIUS_API_KEY
 const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
 const LAMPORTS_PER_SOL = 1_000_000_000
 const DEFAULT_LOCALE = "en-US"
+const HELIUS_MAX_RETRIES = 3
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function getRetryDelayMs(response: Response, attempt: number) {
+  const retryAfterSeconds = Number(response.headers.get("retry-after"))
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1000
+  }
+
+  return 750 * (attempt + 1)
+}
 
 // Fetch token balances for a wallet using Helius DAS API
 export async function getWalletTokenBalances(
   walletAddress: string
 ): Promise<HeliusAsset[]> {
   if (!HELIUS_API_KEY) {
-    console.error("HELIUS_API_KEY not configured")
-    return []
+    throw new Error("HELIUS_API_KEY not configured")
   }
 
-  try {
-    const response = await fetch(HELIUS_RPC_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: "get-assets",
-        method: "getAssetsByOwner",
-        params: {
-          ownerAddress: walletAddress,
-          page: 1,
-          limit: 1000,
-          displayOptions: {
-            showFungible: true,
-            showNativeBalance: false,
+  for (let attempt = 0; attempt <= HELIUS_MAX_RETRIES; attempt += 1) {
+    try {
+      const response = await fetch(HELIUS_RPC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "get-assets",
+          method: "getAssetsByOwner",
+          params: {
+            ownerAddress: walletAddress,
+            page: 1,
+            limit: 1000,
+            displayOptions: {
+              showFungible: true,
+              showNativeBalance: false,
+            },
           },
-        },
-      }),
-    })
+        }),
+      })
 
-    const data = await response.json()
-    if (data.error) {
-      console.error("Helius API error:", data.error)
-      return []
+      if (response.status === 429 && attempt < HELIUS_MAX_RETRIES) {
+        await wait(getRetryDelayMs(response, attempt))
+        continue
+      }
+
+      const body = await response.text()
+      if (!response.ok) {
+        throw new Error(`Helius token balance request failed: HTTP ${response.status} ${body}`)
+      }
+
+      const data = JSON.parse(body)
+      if (data.error) {
+        throw new Error(`Helius token balance error: ${data.error.message || "Unknown error"}`)
+      }
+
+      const assets = data.result?.items || []
+      return assets.filter(
+        (asset: HeliusAsset) =>
+          asset.token_info && asset.token_info.decimals !== undefined
+      )
+    } catch (error) {
+      if (attempt < HELIUS_MAX_RETRIES) {
+        await wait(500 * (attempt + 1))
+        continue
+      }
+
+      throw error
     }
-
-    // Filter to only fungible tokens (SPL tokens)
-    const assets = data.result?.items || []
-    return assets.filter(
-      (asset: HeliusAsset) =>
-        asset.token_info && asset.token_info.decimals !== undefined
-    )
-  } catch (error) {
-    console.error("Error fetching wallet balances:", error)
-    return []
   }
+
+  throw new Error("Helius token balance request failed after retries")
 }
 
 // Fetch native SOL balance for a wallet.
@@ -79,6 +108,10 @@ export async function getWalletSolBalance(
       }),
     })
 
+    if (!response.ok) {
+      throw new Error(`Helius returned HTTP ${response.status}`)
+    }
+
     const data = await response.json()
     if (data.error) {
       console.error("Helius SOL balance error:", data.error)
@@ -98,6 +131,81 @@ export async function getWalletSolBalance(
     console.error("Error fetching SOL balance:", error)
     return null
   }
+}
+
+// One RPC request can return native balances for up to 100 addresses. Keeping this
+// batched avoids rate limits that otherwise make some wallets look like they hold 0 SOL.
+export async function getWalletSolBalances(
+  walletAddresses: string[]
+): Promise<Map<string, { lamports: number; sol: number } | null>> {
+  const addresses = Array.from(new Set(walletAddresses))
+  const balances = new Map<string, { lamports: number; sol: number } | null>()
+
+  if (!HELIUS_API_KEY) {
+    throw new Error("HELIUS_API_KEY not configured")
+  }
+
+  const chunkSize = 100
+
+  for (let offset = 0; offset < addresses.length; offset += chunkSize) {
+    const chunk = addresses.slice(offset, offset + chunkSize)
+
+    try {
+      const response = await fetch(HELIUS_RPC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: `get-multiple-balances-${offset}`,
+          method: "getMultipleAccounts",
+          params: [chunk, { encoding: "base64" }],
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Helius returned HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+      if (data.error || !Array.isArray(data.result?.value)) {
+        throw new Error(data.error?.message || "Invalid Helius balance response")
+      }
+
+      chunk.forEach((address, index) => {
+        const lamports = data.result.value[index]?.lamports
+        balances.set(
+          address,
+          typeof lamports === "number"
+            ? { lamports, sol: lamports / LAMPORTS_PER_SOL }
+            : { lamports: 0, sol: 0 }
+        )
+      })
+    } catch (error) {
+      console.error("Error fetching batched SOL balances, retrying individually:", error)
+
+      // A failed batch should not silently erase every balance. This slower fallback
+      // runs only for the affected chunk.
+      const unresolvedAddresses: string[] = []
+
+      for (const address of chunk) {
+        const balance = await getWalletSolBalance(address)
+        balances.set(address, balance)
+        if (!balance) {
+          unresolvedAddresses.push(address)
+        }
+      }
+
+      if (unresolvedAddresses.length > 0) {
+        throw new Error(
+          `Unable to read SOL balances for ${unresolvedAddresses.length} wallet${
+            unresolvedAddresses.length === 1 ? "" : "s"
+          }. Please refresh and try again.`
+        )
+      }
+    }
+  }
+
+  return balances
 }
 
 export function getAssetMint(asset: HeliusAsset): string {
